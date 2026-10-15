@@ -293,26 +293,6 @@ At (BP−RP)₀ ≈ 2, a 0.1 dex metallicity error changes the inferred age by r
 removes this bias. The uncertainty of the [M/H] value itself is not propagated, but the systematic term
 partly absorbs it.
 
-## Validation
-
-**Leave-one-out tests.** Each reference cluster was removed in turn from the library, and its
-pre-main-sequence members ((BP−RP)₀ ≥ 1.5) were dated with the remaining sequences:
-
-| held-out cluster (age, Myr) | median MAP age (Myr) | bias (dex) | scatter (dex) | 68% / 95% coverage |
-|---|---|---|---|---|
-| β Pic (24.3) | 21 | −0.06 | 0.20 | 32% / 76% |
-| IC 2602 (52.5) | 56 | +0.03 | 0.12 | 64% / 86% |
-| α Per (79.0) | 75 | −0.02 | 0.10 | 57% / 84% |
-| Pleiades (127.4) | 282 | +0.35 | 0.56 | 19% / 56% |
-
-- **β Pic, IC 2602 and α Per:** ages are recovered to within 0.06 dex, with a star-to-star scatter of
-  0.10–0.20 dex.
-- **Pleiades:** removing it leaves a gap between 79 and 675 Myr, which shows how poorly constrained ages
-  in that range are without it.
-- **UBC 17a and Coma Ber** sit at the ends of the library and cannot be held out.
-- **Coverage below nominal:** the 68% and 95% coverage is lower than nominal. Treat the credible
-  intervals as somewhat optimistic.
-
 ## Limitations
 
 - **Main-sequence stars:** only stars still above the main sequence carry real age information. The
