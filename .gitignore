@@ -9,3 +9,6 @@ venv/
 .ipynb_checkpoints/
 .DS_Store
 cmd_interp_output/
+
+# personal working notebook (kept locally, not in the repo)
+examples/cmd_interp_quickstart.ipynb
