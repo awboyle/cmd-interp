@@ -21,4 +21,6 @@ First release.
 - `deredden_gaia` (and `cmd-interp deredden`): de-extincted absolute G, BP, RP and (BP-RP)_0 with uncertainties
   from gaia_source columns. A_0 is user-supplied (default) or integrated from the EXPLORE 3D dust maps
   (`ExploreDustMap`). This reproduces the original calculate_dr3_temps.py pipeline to < 1e-12 mag.
+- `ages_from_gaia` / `star_age_from_gaia` (and `cmd-interp gaia`): Gaia DR3 source IDs -> anonymous archive query
+  -> de-extinction and uncertainties -> CMD ages, with A_0 given explicitly or from the dust maps.
 - `cmd-interp` command-line tool and diagnostic plots.

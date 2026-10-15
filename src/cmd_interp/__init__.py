@@ -3,6 +3,7 @@
 from .core import (BLUE_CAUTION_COLOR, DEFAULT_SCATTER_MODE, DEFAULT_SYSTEMATIC_MAG, MAX_COLOR, BlueColorWarning,
                    infer_ages, star_age)
 from .dustmap import ExploreDustMap
+from .gaia import ages_from_gaia, query_gaia_dr3, star_age_from_gaia
 from .grid import age_grid, node_widths, posterior_density
 from .metallicity import parsec_offset
 from .photometry import deredden_gaia, extinction_coefficient, inflate_parallax_uncertainty
@@ -21,6 +22,7 @@ __all__ = [
     "REFERENCE_AGES",
     "age_grid",
     "ages_for_table",
+    "ages_from_gaia",
     "bundled_reference_dir",
     "deredden_gaia",
     "extinction_coefficient",
@@ -30,6 +32,8 @@ __all__ = [
     "node_widths",
     "parsec_offset",
     "posterior_density",
+    "query_gaia_dr3",
     "resolve_reference_ages",
     "star_age",
+    "star_age_from_gaia",
 ]

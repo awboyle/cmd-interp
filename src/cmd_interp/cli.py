@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
 from . import __version__
 from .core import DEFAULT_SCATTER_MODE, DEFAULT_SYSTEMATIC_MAG, MAX_COLOR, SCATTER_MODES, star_age
@@ -103,7 +104,57 @@ def build_parser():
     dered.add_argument("--dust-errors", type=Path, default=None, help="EXPLORE density-error cube (.h5).")
     dered.add_argument("--no-parallax-inflation", action="store_true", help="Use the catalogue parallax errors as they are.")
     dered.add_argument("--overwrite", action="store_true")
+
+    gaia = sub.add_parser("gaia", help="Query Gaia DR3 by source ID, de-extinct, and infer ages (needs astroquery).")
+    gaia.add_argument("source_ids", nargs="*", type=int, help="Gaia DR3 source IDs.")
+    gaia.add_argument("--ids-file", type=Path, default=None, help="Text file with one source ID per line.")
+    gaia_a0 = gaia.add_mutually_exclusive_group(required=True)
+    gaia_a0.add_argument("--a0", type=float, help="A_0 (mag at 550 nm) for every star.")
+    gaia_a0.add_argument("--dustmap", action="store_true", help="A_0 from the EXPLORE 3D dust maps.")
+    gaia.add_argument("--a0-err", type=float, default=0.0, help="Uncertainty of --a0 (default 0).")
+    gaia.add_argument("--dust-values", type=Path, default=None, help="EXPLORE density cube (.h5).")
+    gaia.add_argument("--dust-errors", type=Path, default=None, help="EXPLORE density-error cube (.h5).")
+    gaia.add_argument("--mh", type=float, default=None, help="[M/H] for every star (default solar).")
+    gaia.add_argument("--output", type=Path, default=None, help="Write the full table (.csv/.feather/.parquet).")
+    gaia.add_argument("--plot", type=Path, default=None, help="CMD + posterior figure (single star only).")
+    gaia.add_argument("--credentials-file", type=Path, default=None, help="Optional astroquery Gaia credentials file.")
+    _add_model_arguments(gaia)
     return parser
+
+
+def _run_gaia(args):
+    from .gaia import ages_from_gaia, star_record
+    ids = list(args.source_ids)
+    if args.ids_file is not None:
+        ids += [int(line.split()[0]) for line in args.ids_file.read_text().splitlines() if line.strip() and not line.startswith("#")]
+    if not ids:
+        raise SystemExit("Give at least one Gaia DR3 source ID (or --ids-file).")
+    dust_map = None
+    if args.dustmap:
+        from .dustmap import ExploreDustMap
+        dust_map = ExploreDustMap(args.dust_values, args.dust_errors)
+    a0 = "dustmap" if args.dustmap else args.a0
+    kwargs = _model_kwargs(args)
+    if args.plot is not None and len(ids) != 1:
+        raise SystemExit("--plot works for a single source ID")
+    table, result = ages_from_gaia(ids, a0=a0, a0_err=args.a0_err, dust_map=dust_map, mh=args.mh,
+                                   credentials_file=args.credentials_file, return_posterior=args.plot is not None,
+                                   _warn_stacklevel=4, **kwargs)
+    if args.plot is not None:
+        from .plotting import plot_star
+        fig, _ = plot_star(star_record(table, result), references=kwargs["references"])
+        fig.savefig(args.plot, dpi=150, bbox_inches="tight")
+    if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        write_table(table, args.output)
+    show = ["dr3_source_id", "BpmRp0", "BpmRp0_err", "phot_g_mean_mag_0", "phot_g_mean_mag_0_err", "extinction_a0",
+            "cmd_age_myr", "cmd_age_lower_myr", "cmd_age_upper_myr", "cmd_age_limit"]
+    with pd.option_context("display.width", 200, "display.max_columns", None):
+        print(table[show].to_string(index=False, float_format=lambda v: f"{v:.3f}"))
+    missing = table.loc[~table.found_in_gaia, "dr3_source_id"].tolist()
+    if missing:
+        print(f"Not found in Gaia DR3: {missing}")
+    return 0
 
 
 def _run_deredden(args):
@@ -188,7 +239,6 @@ def _run_table(args):
         posterior_out.flush()
         stem = args.posterior_output.with_suffix("")
         np.save(f"{stem}_age_grid.npy", result["age_grid_myr"])
-        import pandas as pd
         pd.DataFrame({"row": result["row"], "has_posterior": result["has_posterior"], "limit": result["limit"]}).to_csv(
             f"{stem}_index.csv", index=False)
     n_fit = int(result["has_posterior"].sum())
@@ -204,6 +254,8 @@ def main(argv=None):
         return _run_star(args)
     if args.command == "deredden":
         return _run_deredden(args)
+    if args.command == "gaia":
+        return _run_gaia(args)
     return _run_table(args)
 
 

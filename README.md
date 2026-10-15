@@ -12,6 +12,9 @@ import cmd_interp
 star = cmd_interp.star_age(color=2.0, abs_g=8.0, color_err=0.01, abs_g_err=0.03)
 star["age_map_myr"], star["age_myr_16"], star["age_myr_84"]
 # (74.5, 62.7, 83.9)
+
+# or straight from a Gaia DR3 source ID (queries the archive, de-extincts, propagates errors, fits)
+star = cmd_interp.star_age_from_gaia(6794047652729201024, a0=0.0)   # AU Mic
 ```
 
 ## Installation
@@ -20,6 +23,7 @@ star["age_map_myr"], star["age_myr_16"], star["age_myr_84"]
 pip install git+https://github.com/awboyle/cmd-interp
 pip install "cmd-interp[plot] @ git+https://github.com/awboyle/cmd-interp"       # + matplotlib for the figures
 pip install "cmd-interp[plot,dust] @ git+https://github.com/awboyle/cmd-interp"  # + h5py/astropy for the dust maps
+pip install "cmd-interp[gaia] @ git+https://github.com/awboyle/cmd-interp"       # + astroquery for Gaia DR3 IDs
 ```
 
 Requires Python ≥ 3.10, numpy, scipy, pandas and pyarrow. The reference library (≈300 kB) ships with the package.
@@ -129,6 +133,27 @@ table, result = cmd_interp.ages_for_table(phot)
   zero point, a photometric error floor, and extinction-law uncertainty.
 - **Bad parallaxes.** Stars with parallax ≤ 0 get NaN.
 
+### From Gaia DR3 source IDs
+
+`ages_from_gaia` runs the whole chain:
+1. Queries `gaiadr3.gaia_source` in the ESA archive (anonymous).
+2. De-extincts the photometry and propagates the uncertainties (`deredden_gaia`).
+3. Infers the ages (`ages_for_table`).
+
+```python
+table, result = cmd_interp.ages_from_gaia(ids, a0=0.1)                     # one A_0 for all stars
+table, result = cmd_interp.ages_from_gaia(ids, a0=a0_values, mh=mh_values)  # one A_0 / [M/H] per ID
+table, result = cmd_interp.ages_from_gaia(ids, a0="dustmap", dust_map=dust) # EXPLORE dust maps
+star = cmd_interp.star_age_from_gaia(6794047652729201024, a0=0.0)       # AU Mic, 9.7 pc
+```
+
+- **Choosing A₀ is required.** Give a value, one value per ID, or `"dustmap"`.
+- **Rows** come back in the order of the IDs. IDs not in DR3 keep their row with `found_in_gaia = False` and NaN ages.
+- **Other options** (`systematic_mag`, `reference_ages`, `max_color`, …) are passed through to the age fit.
+- **Your own Gaia rows:** pass them with `gaia_table=` to skip the query.
+- **Logging in:** `credentials_file=` takes an astroquery credentials file, for higher archive quotas. Never put
+  archive passwords in code.
+
 ### Command line
 
 ```bash
@@ -136,6 +161,7 @@ cmd-interp star --color 2.0 --abs-g 8.0 --color-err 0.01 --abs-g-err 0.03 --mh 0
 cmd-interp table stars.parquet ages.parquet --mh-col mh_xgboost --posterior-output posteriors.npy
 cmd-interp table stars.csv ages.csv --reference-age beta_Pic=21 --exclude-reference Coma_Ber
 cmd-interp deredden gaia.csv phot.csv --a0 0.12 --a0-err 0.03          # or --a0-col, or --dustmap --dust-values ... --dust-errors ...
+cmd-interp gaia 6794047652729201024 --a0 0 --plot aumic.png              # Gaia DR3 ID(s) -> ages; --ids-file, --dustmap, --output
 cmd-interp table --help
 ```
 
