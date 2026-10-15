@@ -131,7 +131,7 @@ def _run_star(args):
     star = star_age(args.color, args.abs_g, args.color_err, args.abs_g_err, mh=args.mh, **kwargs)
     summary = {key: star[key] for key in ("age_map_myr", "age_myr_16", "age_myr_50", "age_myr_84", "age_myr_025",
                                           "age_myr_975", "limit", "n_references", "mh", "metallicity_clipped",
-                                          "color_out_of_range")}
+                                          "color_out_of_range", "blue_caution")}
     summary = {key: (None if isinstance(value, float) and not np.isfinite(value) else value) for key, value in summary.items()}
     if args.posterior is not None:
         from .grid import posterior_density

@@ -17,6 +17,18 @@ SCATTER_MODES = ("hybrid", "nearest_two", "interpolated", "interpolated_fill")
 DEFAULT_SCATTER_MODE = "hybrid"
 DEFAULT_SYSTEMATIC_MAG = 0.05
 MAX_COLOR = 3.0   # (BP-RP)_0; redder stars get no age (NaN)
+BLUE_CAUTION_COLOR = 0.8   # (BP-RP)_0; bluer than this the reference sequences start to cross (warning, not a cut)
+
+
+class BlueColorWarning(UserWarning):
+    """Stars bluer than BLUE_CAUTION_COLOR, where the reference sequences are no longer ordered by age."""
+
+
+BLUE_WARNING_TEXT = (
+    "{n} star(s) have (BP-RP)_0 < {limit:g}. Bluer than this the empirical reference sequences start to "
+    "cross (they are no longer ordered by age, especially near the Coma Ber turn-off), so CMD ages and "
+    "young/old limits there should be used with care. These stars are flagged in 'blue_caution'."
+)
 
 
 def infer_ages(
@@ -43,6 +55,7 @@ def infer_ages(
     posterior_out=None,
     metallicity_offset=None,
     verbose=False,
+    _warn_stacklevel=2,
 ):
     """Age posterior of every star from its position in the (BP-RP)_0 vs M_G CMD.
 
@@ -100,7 +113,9 @@ def infer_ages(
         oldest, '' otherwise), has_posterior, n_references, scatter_sigma_mag,
         youngest_age, oldest_age, youngest_mag, oldest_mag (metallicity-shifted),
         mh, metallicity_clipped, posterior (n_star, n_age; unit-sum node weights, zero for
-        stars without a fit), color_out_of_range, and age_grid_myr (n_age).
+        stars without a fit), color_out_of_range, blue_caution ((BP-RP)_0 < 0.8, where
+        the reference sequences start to cross; a BlueColorWarning is also issued), and
+        age_grid_myr (n_age).
 
     Notes
     -----
@@ -144,6 +159,9 @@ def infer_ages(
         color_out_of_range |= color < min_color
     usable = (np.isfinite(color) & np.isfinite(abs_g) & np.isfinite(color_err) & (color_err >= 0)
               & np.isfinite(abs_g_err) & (abs_g_err >= 0) & ~color_out_of_range)
+    blue_caution = usable & (color < BLUE_CAUTION_COLOR)
+    if blue_caution.any():
+        warnings.warn(BLUE_WARNING_TEXT.format(n=int(blue_caution.sum()), limit=BLUE_CAUTION_COLOR), BlueColorWarning, stacklevel=_warn_stacklevel)
 
     # metallicity: per-star [M/H], NaN -> solar; all-solar skips the shift entirely
     mh_star = np.zeros(n_star) if mh is None else np.broadcast_to(np.asarray(mh, dtype=float), color.shape).copy()
@@ -159,7 +177,7 @@ def infer_ages(
                 warnings.warn(
                     f"{int(metallicity_clipped.sum())} star(s) have [M/H] or (BP-RP)_0 outside the PARSEC offset "
                     "table; their offsets were taken at the table edge (see 'metallicity_clipped').",
-                    stacklevel=2,
+                    stacklevel=_warn_stacklevel,
                 )
 
     ref_age = np.array([reference["age_myr"] for reference in references])
@@ -325,6 +343,7 @@ def infer_ages(
         "mh": mh_star,
         "metallicity_clipped": metallicity_clipped,
         "color_out_of_range": color_out_of_range,
+        "blue_caution": blue_caution,
         "age_grid_myr": full_age_grid,
     }
     if return_posterior or posterior_out is not None:
@@ -339,6 +358,7 @@ def star_age(color, abs_g, color_err, abs_g_err, mh=None, **kwargs):
     mh, metallicity_clipped, posterior (n_age,) and age_grid_myr.  Keyword arguments are
     passed to infer_ages().
     """
+    kwargs.setdefault("_warn_stacklevel", 3)
     result = infer_ages([color], [abs_g], [color_err], [abs_g_err], mh=None if mh is None else [mh], **kwargs)
     out = {}
     for key, value in result.items():

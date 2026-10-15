@@ -26,6 +26,7 @@ MH_COLUMN = "cmd_age_mh"
 CLIPPED_COLUMN = "cmd_age_metallicity_clipped"
 FITTED_COLUMN = "cmd_age_fitted"
 COLOR_RANGE_COLUMN = "cmd_age_color_out_of_range"   # (BP-RP)_0 outside the fitted range (default: redder than 3.0)
+BLUE_COLUMN = "cmd_age_blue_caution"                # (BP-RP)_0 < 0.8: reference sequences start to cross, use with care
 
 
 def read_table(path):
@@ -135,7 +136,7 @@ def ages_for_table(
         color[rows], mag[rows], color_err[rows], g_err[rows],
         mh=mh_values[rows] if np.any(np.nan_to_num(mh_values[rows]) != 0) else None,
         systematic_mag=systematic_mag, scatter_mode=scatter_mode, references=references,
-        return_posterior=return_posterior, posterior_out=posterior_out, **kwargs,
+        return_posterior=return_posterior, posterior_out=posterior_out, **{"_warn_stacklevel": 3, **kwargs},
     )
     result["row"] = rows
 
@@ -151,6 +152,7 @@ def ages_for_table(
     clipped = np.zeros(n_row, dtype=bool)
     fitted = np.zeros(n_row, dtype=bool)
     out_of_range = np.zeros(n_row, dtype=bool)
+    blue = np.zeros(n_row, dtype=bool)
 
     young = result["limit"] == "young"
     old = result["limit"] == "old"
@@ -171,6 +173,7 @@ def ages_for_table(
     clipped[rows] = result["metallicity_clipped"]
     fitted[rows] = result["has_posterior"]
     out_of_range[rows] = result["color_out_of_range"]
+    blue[rows] = result["blue_caution"]
 
     frame[AGE_COLUMN] = age
     frame[LOWER_COLUMN] = lower
@@ -185,4 +188,5 @@ def ages_for_table(
     frame[CLIPPED_COLUMN] = clipped
     frame[FITTED_COLUMN] = fitted
     frame[COLOR_RANGE_COLUMN] = out_of_range
+    frame[BLUE_COLUMN] = blue
     return frame, result

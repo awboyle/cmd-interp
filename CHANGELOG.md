@@ -14,6 +14,8 @@ First release.
 - Optional per-star [M/H] correction from PARSEC v1.2S offsets at fixed colour.
 - Optional unresolved-binary likelihood mixture.
 - Ages only for (BP-RP)_0 <= 3.0 by default (`max_color`); redder stars get NaN and `color_out_of_range`.
+- `BlueColorWarning` and a `blue_caution` flag for stars bluer than (BP-RP)_0 = 0.8, where the reference
+  sequences start to cross. Ages are still returned.
 - `reference_ages=` / `exclude_references=` (and `--reference-age NAME=MYR`): change the age of any reference
   cluster, or leave clusters out. Aliases such as "Pleiades" and "alpha Per" are accepted.
 - `deredden_gaia` (and `cmd-interp deredden`): de-extincted absolute G, BP, RP and (BP-RP)_0 with uncertainties

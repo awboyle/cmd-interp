@@ -38,6 +38,12 @@ All photometry must be **extinction corrected**, matching the reference sequence
 Ages are only computed for **(BP−RP)₀ ≤ 3.0**. Redder stars get NaN and `color_out_of_range = True`.
 The limit can be changed with `max_color=`, and an optional blue limit set with `min_color=`.
 
+**Caution bluer than (BP−RP)₀ = 0.8.** Here the reference sequences start to cross: they are no longer
+ordered by age, especially near the Coma Ber turn-off. Ages are still returned. But every call that
+includes such stars issues a `cmd_interp.BlueColorWarning`, and the stars are flagged `blue_caution`
+(`cmd_age_blue_caution` in tables). To silence the warning:
+`warnings.filterwarnings("ignore", category=cmd_interp.BlueColorWarning)`.
+
 If you are starting from Gaia DR3 catalogue columns, `cmd_interp.deredden_gaia` computes these
 inputs and their uncertainties (see [De-extincted photometry](#de-extincted-photometry)).
 
@@ -260,8 +266,9 @@ ends of the library and cannot be held out.
   converge for F/G stars older than ~50 Myr.
 - Unresolved binaries look younger (brighter). Remove them first, or enable the binary mixture.
 - Ages between 127 and 675 Myr rest on interpolation between the Pleiades and Coma Ber.
-- Stars redder than (BP−RP)₀ = 3.0 get no age by default; the bluest stars (BP−RP ≲ 0.5) sit where
-  the reference sequences cross, so their ages and young/old limits are not meaningful.
+- Stars redder than (BP−RP)₀ = 3.0 get no age by default. Bluer than 0.8 the reference sequences start
+  to cross (flagged and warned, see [Inputs](#inputs)). By BP−RP ≲ 0.5 they are not ordered by age at
+  all, so ages and young/old limits there are not meaningful.
 - The reference sequences, and so the ages, inherit the adopted cluster ages and the
   extinction corrections of the members.
 
