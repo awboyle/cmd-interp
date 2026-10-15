@@ -61,8 +61,10 @@ def infer_ages(
         interpolates the references' local scatter in log age; 'interpolated_fill' also
         fills colours where a reference has too few members; 'nearest_two' uses one sigma
         per star (mean of the two bracketing references); 'hybrid' (default) uses
-        'interpolated_fill' inside the reference envelope and 'nearest_two' for stars
-        fainter than every covering reference.
+        'interpolated_fill' inside the reference envelope, 'nearest_two' for stars
+        fainter than every covering reference, and the youngest covering reference's
+        (filled) width for stars brighter than it.  The star's own abs_g_err and the
+        systematic always enter in quadrature.
     references : list, optional
         Output of load_references(); defaults to the bundled six-cluster library.
     binary_fraction, binary_dm, binary_dm_weights :
@@ -191,13 +193,18 @@ def infer_ages(
             ref_scatter = np.vstack([fill_scatter(color[members], r, ref_scatter[k]) for k, r in enumerate(refs)])
             star_sigma = np.where(np.all(np.isfinite(ref_scatter), axis=0), 1.0, np.nan)
         else:  # hybrid
-            # interpolated_fill inside the reference envelope, nearest_two below every covering reference: outside
-            # the envelope an age-dependent sigma would make the likelihood prefer the broadest reference instead
-            # of the nearest one
+            # interpolated_fill inside the reference envelope; one age-independent width per star outside it, because
+            # there an age-dependent sigma makes the likelihood prefer the broadest reference instead of the nearest one.
+            # Below every covering sequence: nearest_two.  Above the youngest covering sequence: that sequence's filled
+            # width, i.e. the value sigma(t) has at the youngest age, so sigma is continuous across the sequence.
             n2_sigma = nearest_two_scatter(abs_g[members], ref_mag, ref_scatter)
             ref_scatter = np.vstack([fill_scatter(color[members], r, ref_scatter[k]) for k, r in enumerate(refs)])
-            outside = abs_g[members] > ref_mag.max(axis=0)
-            star_sigma = np.where(outside, n2_sigma, np.where(np.all(np.isfinite(ref_scatter), axis=0), 1.0, np.nan))
+            fainter = abs_g[members] > ref_mag.max(axis=0)
+            brighter = abs_g[members] < ref_mag[0]
+            bright_sigma = np.where(np.isfinite(ref_scatter[0]), ref_scatter[0], n2_sigma)
+            outside = fainter | brighter
+            star_sigma = np.where(fainter, n2_sigma, np.where(
+                brighter, bright_sigma, np.where(np.all(np.isfinite(ref_scatter), axis=0), 1.0, np.nan)))
         if scatter_mode != "hybrid":
             outside = np.zeros(len(members), dtype=bool)
         valid = np.isfinite(star_sigma)

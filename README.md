@@ -120,8 +120,18 @@ range the references share.
 σ_t² = σ_G² + s_t² + σ_sys²
 
 Here s_t is the local width of the reference sequences: the normal-scaled MAD of member
-residuals in a 0.5 mag colour window, interpolated in log age. In `hybrid` mode, a star fainter
-than every covering sequence instead gets a single width from its two nearest sequences.
+residuals in a 0.5 mag colour window, interpolated in log age. σ_G is each star's own
+absolute-G error.
+
+In `hybrid` mode (the default), a star outside the reference envelope keeps one width at every
+age. Otherwise an age-dependent s_t would make the likelihood favour the broadest reference
+rather than the nearest one.
+- **Fainter than every covering sequence:** the mean width of its two nearest sequences.
+- **Brighter than the youngest covering sequence:** that sequence's width at the star's colour. That is
+  UBC 17a for (BP−RP)₀ ≤ 3.0 and β Pic redward of it. Where UBC 17a has fewer than 8 members in the
+  window, the width is taken from the nearest colour that has enough. It equals s_t at the youngest
+  age, so σ is continuous across the sequence. Such stars get a flat posterior below the youngest
+  age with a falling tail above it, instead of a spurious peak at older ages.
 
 **Prior and age grid.** The prior is uniform in linear age. The posterior is evaluated between the
 youngest and oldest covering reference. It is held flat at its edge values down to 0 Myr and up to
@@ -158,7 +168,13 @@ itself, which the 0.05 mag systematic term partly absorbs.
 ## Validation
 
 **Agreement with the original pipeline.** The default settings reproduce the original
-research implementation exactly (`tests/test_regression.py`).
+research implementation exactly for every star not brighter than the youngest covering sequence
+(`tests/test_regression.py`). Stars above that sequence differ by design, because of the bright-side
+width described under Method.
+
+On 40,000 TARS pre-main-sequence stars, 7.6% are young limits. For these, the median fraction of
+posterior at or below the youngest age rises from 0.83 to 0.93. For stars more than 1 mag above
+UBC 17a it rises from 0.08 to 1.00.
 
 **Leave-one-out tests.** Each reference cluster was removed from the library and its photometric
 PMS members (BP−RP ≥ 1.5) were re-dated:
