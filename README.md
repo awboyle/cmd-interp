@@ -18,7 +18,8 @@ star["age_map_myr"], star["age_myr_16"], star["age_myr_84"]
 
 ```bash
 pip install git+https://github.com/awboyle/cmd-interp
-pip install "cmd-interp[plot] @ git+https://github.com/awboyle/cmd-interp"   # with matplotlib for the figures
+pip install "cmd-interp[plot] @ git+https://github.com/awboyle/cmd-interp"       # + matplotlib for the figures
+pip install "cmd-interp[plot,dust] @ git+https://github.com/awboyle/cmd-interp"  # + h5py/astropy for the dust maps
 ```
 
 Requires Python ≥ 3.10, numpy, scipy, pandas and pyarrow. The reference library (≈300 kB) ships with the package.
@@ -33,6 +34,12 @@ All photometry must be **extinction corrected**, matching the reference sequence
 | `abs_g` | absolute, extinction-corrected Gaia G, M_G,0 |
 | `color_err`, `abs_g_err` | 1σ uncertainties (mag); include the parallax error in `abs_g_err` |
 | `mh` (optional) | stellar [M/H] in dex; default solar |
+
+Ages are only computed for **(BP−RP)₀ ≤ 3.0**. Redder stars get NaN and `color_out_of_range = True`.
+The limit can be changed with `max_color=`, and an optional blue limit set with `min_color=`.
+
+If you are starting from Gaia DR3 catalogue columns, `cmd_interp.deredden_gaia` computes these
+inputs and their uncertainties (see [De-extincted photometry](#de-extincted-photometry)).
 
 ## Usage
 
@@ -62,13 +69,67 @@ table, result = cmd_interp.ages_for_table(
 This appends `cmd_age_myr` (MAP, or the reference age at a limit), `cmd_age_lower_myr` /
 `cmd_age_upper_myr` (16th/84th percentiles), `cmd_age_median_myr`, `cmd_age_p2p5_myr` /
 `cmd_age_p97p5_myr`, `cmd_age_limit`, `cmd_age_n_references`, `cmd_age_mh`,
-`cmd_age_metallicity_clipped` and `cmd_age_fitted`. `result["row"]` maps each posterior row to its table row.
+`cmd_age_metallicity_clipped`, `cmd_age_color_out_of_range` and `cmd_age_fitted`. `result["row"]` maps
+each posterior row to its table row.
+
+### Changing the reference ages
+
+The adopted ages (table under [Method](#method)) are used by default. To use a different age for any
+reference, pass only the ones you want to change; the others keep their defaults:
+
+```python
+cmd_interp.star_age(2.0, 8.0, 0.01, 0.03, reference_ages={"beta_Pic": 21.0})
+cmd_interp.ages_for_table(table, reference_ages={"Pleiades": 112, "alpha Per": 85})
+cmd_interp.infer_ages(..., exclude_references=["Coma Ber"])                 # leave a reference out
+cmd_interp.resolve_reference_ages({"IC 2602": 46})                         # inspect the resulting set
+```
+
+Names are matched loosely: `beta_Pic`, `beta pic`, `bPMG`, `Pleiades`, `Melotte_22`, `alpha Per`, `Coma Ber`,
+`IC 2602` and similar all work. The age grid and the interpolation follow the new ages. For many
+calls, load the library once with `refs = cmd_interp.load_references(reference_ages=...)` and pass
+`references=refs`.
+
+### De-extincted photometry
+
+`deredden_gaia` takes gaia_source columns (`parallax`, `parallax_error`, `ruwe`, `phot_{g,bp,rp}_mean_mag`,
+`phot_{g,bp,rp}_mean_flux`, `phot_{g,bp,rp}_mean_flux_error`, plus `ra`/`dec` for the dust map). It returns
+absolute, extinction-corrected `phot_g_mean_mag_0`, `BpmRp0` (and BP, RP) with uncertainties: exactly the
+columns `ages_for_table` reads by default.
+
+```python
+phot = cmd_interp.deredden_gaia(gaia_table, a0=0.12, a0_err=0.03)   # one A_0 for every star (default 0)
+phot = cmd_interp.deredden_gaia(gaia_table, a0="a0_column")          # per-star A_0 column
+dust = cmd_interp.ExploreDustMap("explore_cube_density_values_010pc_v2.h5",
+                                 "explore_cube_density_errors_050pc_v2.h5")
+phot = cmd_interp.deredden_gaia(gaia_table, a0="dustmap", dust_map=dust)   # A_0 from the EXPLORE 3D dust maps
+table, result = cmd_interp.ages_for_table(phot)
+```
+
+- **Extinction law.** A_0 (extinction at 550 nm) is converted with the Fitzpatrick (2019) Gaia EDR3
+  coefficients k_X((BP−RP)₀, A_0). The upper-HRD table is used for G − 5 log₁₀(d/10 pc) < 5, otherwise the
+  main-sequence table. The intrinsic colour is iterated to 0.01 mag.
+- **Dust map.** `a0="dustmap"` integrates the EXPLORE density cube (Vergely et al. 2022) to d = 1000/parallax in
+  5 pc steps. It also returns the line-of-sight integral of the density-error cube (perfectly correlated
+  voxels, so an upper bound) and the local density dA_0/dd. The cubes (~230 MB) are not bundled: download
+  them from EXPLORE and pass their paths, or set `CMD_INTERP_DUST_DIR`.
+- **Uncertainties.** These combine:
+  - flux errors and the Vega zero points (Riello et al. 2021);
+  - the parallax error, inflated with RUWE and G and propagated through both the distance modulus
+    and A_0(d);
+  - the A_0 error (dust-map, or your `a0_err`).
+
+  In (BP−RP)₀ the distance modulus cancels and only E(BP−RP) carries the A_0 error.
+- **Not included.** The full equations are in the `cmd_interp.photometry` docstring. Not included: the parallax
+  zero point, a photometric error floor, and extinction-law uncertainty.
+- **Bad parallaxes.** Stars with parallax ≤ 0 get NaN.
 
 ### Command line
 
 ```bash
 cmd-interp star --color 2.0 --abs-g 8.0 --color-err 0.01 --abs-g-err 0.03 --mh 0.1 --plot star.png
 cmd-interp table stars.parquet ages.parquet --mh-col mh_xgboost --posterior-output posteriors.npy
+cmd-interp table stars.csv ages.csv --reference-age beta_Pic=21 --exclude-reference Coma_Ber
+cmd-interp deredden gaia.csv phot.csv --a0 0.12 --a0-err 0.03          # or --a0-col, or --dustmap --dust-values ... --dust-errors ...
 cmd-interp table --help
 ```
 
@@ -91,7 +152,10 @@ fig, axes = plot_star(cmd_interp.star_age(2.0, 8.0, 0.01, 0.03))
 | `mh` | solar | stellar [M/H]; see below |
 | `scatter_mode` | `"hybrid"` | how the empirical width of the reference sequences enters σ (`hybrid`, `interpolated_fill`, `interpolated`, `nearest_two`) |
 | `binary_fraction`, `binary_dm` | off | optional unresolved-binary mixture: with probability f_b the star is brighter than the sequence by `binary_dm` |
-| `references` | bundled | `load_references(reference_ages=...)` to drop clusters or use your own library |
+| `reference_ages` | adopted ages | new ages (Myr) for any reference, e.g. `{"beta_Pic": 21}`; the rest keep their defaults |
+| `exclude_references` | none | references to leave out |
+| `max_color`, `min_color` | 3.0, none | (BP−RP)₀ range that gets ages; outside it the outputs are NaN |
+| `references` | bundled | a preloaded `load_references(...)` list, e.g. a custom library (`use_default_ages=False`) |
 
 ## Method
 
@@ -128,7 +192,7 @@ age. Otherwise an age-dependent s_t would make the likelihood favour the broades
 rather than the nearest one.
 - **Fainter than every covering sequence:** the mean width of its two nearest sequences.
 - **Brighter than the youngest covering sequence:** that sequence's width at the star's colour. That is
-  UBC 17a for (BP−RP)₀ ≤ 3.0 and β Pic redward of it. Where UBC 17a has fewer than 8 members in the
+  UBC 17a at every colour that gets an age. Where UBC 17a has fewer than 8 members in the
   window, the width is taken from the nearest colour that has enough. It equals s_t at the youngest
   age, so σ is continuous across the sequence. Such stars get a flat posterior below the youngest
   age with a falling tail above it, instead of a spurious peak at older ages.
@@ -196,6 +260,8 @@ ends of the library and cannot be held out.
   converge for F/G stars older than ~50 Myr.
 - Unresolved binaries look younger (brighter). Remove them first, or enable the binary mixture.
 - Ages between 127 and 675 Myr rest on interpolation between the Pleiades and Coma Ber.
+- Stars redder than (BP−RP)₀ = 3.0 get no age by default; the bluest stars (BP−RP ≲ 0.5) sit where
+  the reference sequences cross, so their ages and young/old limits are not meaningful.
 - The reference sequences, and so the ages, inherit the adopted cluster ages and the
   extinction corrections of the members.
 
@@ -205,6 +271,9 @@ ends of the library and cannot be held out.
 - Empirical cluster sequences: Rottensteiner & Meingast (2024).
 - β Pic members: the Montreal Open Clusters and Associations database (MOCAdb; Gagné 2024). β Pic age: Binks & Jeffries (2014).
 - Metallicity offsets: PARSEC v1.2S (Bressan et al. 2012) through the CMD 3.7 web interface.
+- Extinction law: Fitzpatrick et al. (2019), Gaia EDR3 coefficients (bundled in `data/extinction/`).
+- 3D dust maps: EXPLORE / Vergely et al. (2022) (not bundled).
+- Photometric zero points: Riello et al. (2021). Parallax-error inflation for RUWE ≥ 1.25: Eq. 3 and Fig. 3 of arXiv:2206.05439.
 
 `scripts/` documents how the bundled data were made: `slim_reference_data.py` and `build_parsec_offsets.py`.
 

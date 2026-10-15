@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 
 from . import __version__
-from .core import DEFAULT_SCATTER_MODE, DEFAULT_SYSTEMATIC_MAG, SCATTER_MODES, star_age
+from .core import DEFAULT_SCATTER_MODE, DEFAULT_SYSTEMATIC_MAG, MAX_COLOR, SCATTER_MODES, star_age
 from .grid import age_grid
 from .references import REFERENCE_AGES, load_references
 from .table import DEFAULT_ABS_G_ERR, ages_for_table, read_table, write_table
@@ -20,8 +20,14 @@ def _add_model_arguments(parser):
                         help=f"Extra magnitude scatter added in quadrature (default {DEFAULT_SYSTEMATIC_MAG}).")
     parser.add_argument("--scatter-mode", choices=SCATTER_MODES, default=DEFAULT_SCATTER_MODE,
                         help=f"Empirical-scatter prescription (default {DEFAULT_SCATTER_MODE}).")
+    parser.add_argument("--reference-age", action="append", default=[], metavar="NAME=MYR",
+                        help="Use a different age for a reference cluster, e.g. --reference-age beta_Pic=21 "
+                             "(repeatable; aliases such as Pleiades or alpha_Per work). Defaults: "
+                             + ", ".join(f"{k}={v:g}" for k, v in REFERENCE_AGES.items()) + ".")
     parser.add_argument("--exclude-reference", action="append", default=[], metavar="NAME",
                         help=f"Leave out a reference cluster (repeatable). Choices: {', '.join(REFERENCE_AGES)}.")
+    parser.add_argument("--max-color", type=float, default=MAX_COLOR,
+                        help=f"Stars redder than this (BP-RP)_0 get no age (default {MAX_COLOR}).")
     parser.add_argument("--reference-dir", type=Path, default=None,
                         help="Use a custom reference library instead of the bundled one.")
     parser.add_argument("--binary-fraction", type=float, default=0.0,
@@ -31,16 +37,21 @@ def _add_model_arguments(parser):
 
 
 def _references(args):
-    unknown = sorted(set(args.exclude_reference) - set(REFERENCE_AGES))
-    if unknown:
-        raise SystemExit(f"Unknown reference cluster(s): {', '.join(unknown)}")
-    ages = {name: age for name, age in REFERENCE_AGES.items() if name not in args.exclude_reference}
-    return load_references(args.reference_dir, ages)
+    ages = {}
+    for item in args.reference_age:
+        name, sep, value = item.partition("=")
+        if not sep:
+            raise SystemExit(f"--reference-age needs NAME=MYR, got {item!r}")
+        ages[name.strip()] = float(value)
+    try:
+        return load_references(args.reference_dir, ages or None, exclude=args.exclude_reference or None)
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
 
 
 def _model_kwargs(args):
     return dict(systematic_mag=args.systematic_mag, scatter_mode=args.scatter_mode, references=_references(args),
-                binary_fraction=args.binary_fraction, binary_dm=args.binary_dm)
+                binary_fraction=args.binary_fraction, binary_dm=args.binary_dm, max_color=args.max_color)
 
 
 def build_parser():
@@ -78,14 +89,49 @@ def build_parser():
     table.add_argument("--overwrite", action="store_true")
     table.add_argument("--chunk-size", type=int, default=2000)
     _add_model_arguments(table)
+
+    dered = sub.add_parser("deredden", help="De-extincted absolute G, BP, RP, (BP-RP)_0 and uncertainties from gaia_source columns.")
+    dered.add_argument("input", type=Path, help="Table with parallax, parallax_error, ruwe, phot_*_mean_mag, phot_*_mean_flux(_error).")
+    dered.add_argument("output", type=Path)
+    a0 = dered.add_mutually_exclusive_group()
+    a0.add_argument("--a0", type=float, default=0.0, help="A_0 (mag at 550 nm) for every star (default 0).")
+    a0.add_argument("--a0-col", default=None, help="Per-star A_0 column.")
+    a0.add_argument("--dustmap", action="store_true", help="Integrate the EXPLORE dust maps to each star (needs ra, dec).")
+    dered.add_argument("--a0-err", type=float, default=0.0, help="Uncertainty of a supplied A_0 (default 0).")
+    dered.add_argument("--a0-err-col", default=None, help="Per-star A_0 uncertainty column.")
+    dered.add_argument("--dust-values", type=Path, default=None, help="EXPLORE density cube (.h5).")
+    dered.add_argument("--dust-errors", type=Path, default=None, help="EXPLORE density-error cube (.h5).")
+    dered.add_argument("--no-parallax-inflation", action="store_true", help="Use the catalogue parallax errors as they are.")
+    dered.add_argument("--overwrite", action="store_true")
     return parser
+
+
+def _run_deredden(args):
+    from .photometry import deredden_gaia
+    if args.output.exists() and not args.overwrite:
+        raise SystemExit(f"Output exists: {args.output}; pass --overwrite to replace it.")
+    data = read_table(args.input)
+    dust_map = None
+    if args.dustmap:
+        from .dustmap import ExploreDustMap
+        dust_map = ExploreDustMap(args.dust_values, args.dust_errors)
+        a0 = "dustmap"
+    else:
+        a0 = args.a0_col if args.a0_col else args.a0
+    out = deredden_gaia(data, a0=a0, a0_err=args.a0_err_col if args.a0_err_col else args.a0_err, dust_map=dust_map,
+                        inflate_parallax_error=not args.no_parallax_inflation)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    write_table(out, args.output)
+    print(f"{len(out):,} rows; {int(np.isfinite(out.BpmRp0).sum()):,} with de-extincted photometry -> {args.output}")
+    return 0
 
 
 def _run_star(args):
     kwargs = _model_kwargs(args)
     star = star_age(args.color, args.abs_g, args.color_err, args.abs_g_err, mh=args.mh, **kwargs)
     summary = {key: star[key] for key in ("age_map_myr", "age_myr_16", "age_myr_50", "age_myr_84", "age_myr_025",
-                                          "age_myr_975", "limit", "n_references", "mh", "metallicity_clipped")}
+                                          "age_myr_975", "limit", "n_references", "mh", "metallicity_clipped",
+                                          "color_out_of_range")}
     summary = {key: (None if isinstance(value, float) and not np.isfinite(value) else value) for key, value in summary.items()}
     if args.posterior is not None:
         from .grid import posterior_density
@@ -98,6 +144,8 @@ def _run_star(args):
         fig.savefig(args.plot, dpi=150, bbox_inches="tight")
     if args.json:
         print(json.dumps(summary, indent=2))
+    elif star["color_out_of_range"]:
+        print(f"No age: (BP-RP)_0 = {args.color:g} is outside the fitted colour range (max {args.max_color:g}).")
     elif not star["has_posterior"]:
         print("No age: the star lies outside the colour range covered by at least two reference sequences.")
     else:
@@ -154,6 +202,8 @@ def main(argv=None):
     args = build_parser().parse_args(argv)
     if args.command == "star":
         return _run_star(args)
+    if args.command == "deredden":
+        return _run_deredden(args)
     return _run_table(args)
 
 

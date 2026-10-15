@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from importlib import resources
 from pathlib import Path
 
@@ -18,6 +19,16 @@ REFERENCE_AGES = {
     "Melotte_111": 675.0,  # Coma Berenices: terminal sequence, reaches ~3300 K
 }
 
+# Other accepted names for the bundled references (matched ignoring case, spaces, '_', '-' and '.').
+REFERENCE_ALIASES = {
+    "ubc17a": "UBC_17a",
+    "betapic": "beta_Pic", "betapictoris": "beta_Pic", "bpmg": "beta_Pic", "βpic": "beta_Pic",
+    "ic2602": "IC_2602",
+    "melotte20": "Melotte_20", "alphaper": "Melotte_20", "alphapersei": "Melotte_20", "αper": "Melotte_20",
+    "melotte22": "Melotte_22", "pleiades": "Melotte_22", "m45": "Melotte_22",
+    "melotte111": "Melotte_111", "comaber": "Melotte_111", "comaberenices": "Melotte_111",
+}
+
 COLOR_BIN_WIDTH = 0.5        # mag; colour window of the local member scatter
 SCATTER_RESIDUAL_CUT = 0.3   # mag; members farther than this from their sequence are not used for the scatter
 
@@ -25,6 +36,46 @@ SCATTER_RESIDUAL_CUT = 0.3   # mag; members farther than this from their sequenc
 def bundled_reference_dir():
     """Directory of the reference library shipped with the package."""
     return Path(str(resources.files("cmd_interp") / "data" / "references"))
+
+
+def reference_name(name):
+    """Canonical name of a bundled reference ('Pleiades', 'alpha Per', 'beta_Pic', ... -> file name);
+    names that are not bundled references are returned unchanged."""
+    key = re.sub(r"[\s_\-.]", "", str(name)).lower()
+    if key in REFERENCE_ALIASES:
+        return REFERENCE_ALIASES[key]
+    for canonical in REFERENCE_AGES:
+        if re.sub(r"[\s_\-.]", "", canonical).lower() == key:
+            return canonical
+    return str(name)
+
+
+def resolve_reference_ages(reference_ages=None, exclude=None, use_default_ages=True):
+    """The reference ages to use (Myr), youngest first.
+
+    reference_ages: mapping of cluster -> age in Myr that replaces the adopted age of those
+        clusters (e.g. ``{"beta_Pic": 21.0}`` or ``{"Pleiades": 112}``); all other clusters
+        keep their default ages.  With use_default_ages=False it is the complete list instead
+        (e.g. for a custom reference library).
+    exclude: cluster names to leave out.
+    """
+    ages = dict(REFERENCE_AGES) if use_default_ages else {}
+    for name, age in (reference_ages or {}).items():
+        age = float(age)
+        if not np.isfinite(age) or age <= 0:
+            raise ValueError(f"Reference age of {name} must be a positive number of Myr, got {age}")
+        ages[reference_name(name)] = age
+    for name in exclude or ():
+        canonical = reference_name(name)
+        if canonical not in ages:
+            raise ValueError(f"Cannot exclude unknown reference {name!r}; references: {', '.join(ages)}")
+        ages.pop(canonical)
+    if len(ages) < 2:
+        raise ValueError("At least two reference clusters are needed.")
+    values = sorted(ages.values())
+    if np.any(np.diff(values) <= 0):
+        raise ValueError(f"Reference ages must all differ: {ages}")
+    return dict(sorted(ages.items(), key=lambda item: item[1]))
 
 
 def _sequence_points(frame, color_col="BpmRp0", mag_col="GMag0"):
@@ -41,6 +92,8 @@ def load_references(
     reference_dir=None,
     reference_ages=None,
     *,
+    exclude=None,
+    use_default_ages=True,
     color_bin_width=COLOR_BIN_WIDTH,
     scatter_residual_cut=SCATTER_RESIDUAL_CUT,
     include_member_ids=False,
@@ -50,18 +103,19 @@ def load_references(
     reference_dir: directory holding ``<name>_sequence.feather`` (columns BpmRp0, GMag0)
         and ``<name>_members.feather`` (columns BpmRp0, phot_g_mean_mag_0, and GaiaDR3 if
         member IDs are wanted).  Defaults to the bundled library.
-    reference_ages: mapping of cluster name -> adopted age in Myr.  Defaults to
-        REFERENCE_AGES.  Pass a subset to leave clusters out (at least two are needed).
+    reference_ages: ages (Myr) that replace the defaults of the named clusters, e.g.
+        ``{"beta_Pic": 21.0}``; see resolve_reference_ages().  Aliases such as "Pleiades"
+        or "alpha Per" are accepted.
+    exclude: clusters to leave out (at least two must remain).
+    use_default_ages: False to take ``reference_ages`` as the complete list (custom library).
 
     Returns a list of dicts sorted by age (youngest first), the input of infer_ages().
     """
     reference_dir = bundled_reference_dir() if reference_dir is None else Path(reference_dir).expanduser()
-    reference_ages = REFERENCE_AGES if reference_ages is None else dict(reference_ages)
-    if len(reference_ages) < 2:
-        raise ValueError("At least two reference clusters are needed.")
+    ages = resolve_reference_ages(reference_ages, exclude, use_default_ages)
 
     references = []
-    for cluster, age_myr in sorted(reference_ages.items(), key=lambda item: item[1]):
+    for cluster, age_myr in ages.items():
         sequence = pd.read_feather(reference_dir / f"{cluster}_sequence.feather", columns=["BpmRp0", "GMag0"])
         points = _sequence_points(sequence)
         members = pd.read_feather(

@@ -13,4 +13,10 @@ First release.
   age-dependent width for these stars.
 - Optional per-star [M/H] correction from PARSEC v1.2S offsets at fixed colour.
 - Optional unresolved-binary likelihood mixture.
+- Ages only for (BP-RP)_0 <= 3.0 by default (`max_color`); redder stars get NaN and `color_out_of_range`.
+- `reference_ages=` / `exclude_references=` (and `--reference-age NAME=MYR`): change the age of any reference
+  cluster, or leave clusters out. Aliases such as "Pleiades" and "alpha Per" are accepted.
+- `deredden_gaia` (and `cmd-interp deredden`): de-extincted absolute G, BP, RP and (BP-RP)_0 with uncertainties
+  from gaia_source columns. A_0 is user-supplied (default) or integrated from the EXPLORE 3D dust maps
+  (`ExploreDustMap`). This reproduces the original calculate_dr3_temps.py pipeline to < 1e-12 mag.
 - `cmd-interp` command-line tool and diagnostic plots.

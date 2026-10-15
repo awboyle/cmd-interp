@@ -25,6 +25,7 @@ SIGMA_COLUMN = "cmd_age_scatter_mag"
 MH_COLUMN = "cmd_age_mh"
 CLIPPED_COLUMN = "cmd_age_metallicity_clipped"
 FITTED_COLUMN = "cmd_age_fitted"
+COLOR_RANGE_COLUMN = "cmd_age_color_out_of_range"   # (BP-RP)_0 outside the fitted range (default: redder than 3.0)
 
 
 def read_table(path):
@@ -70,6 +71,8 @@ def ages_for_table(
     systematic_mag=DEFAULT_SYSTEMATIC_MAG,
     scatter_mode=DEFAULT_SCATTER_MODE,
     references=None,
+    reference_ages=None,
+    exclude_references=None,
     return_posterior=True,
     posterior_out=None,
     **kwargs,
@@ -84,7 +87,9 @@ def ages_for_table(
     fit_mask: boolean array / column name selecting the stars to fit (e.g. a pre-main-sequence
         selection); other rows get NaN ages.  Default: every row with finite photometry.
         Main-sequence stars get broad, uninformative posteriors from this method.
-    Other keyword arguments are passed to infer_ages() (e.g. binary_fraction, chunk_size).
+    reference_ages / exclude_references: new ages (Myr) for any reference cluster, e.g.
+        ``{"beta_Pic": 21.0}``, and clusters to leave out; see infer_ages().
+    Other keyword arguments are passed to infer_ages() (e.g. max_color, binary_fraction).
 
     Returns (table, result): a copy of the table with the cmd_age_* columns appended, and the
     infer_ages() output for the fitted rows (``result['row']`` gives their positions in the
@@ -123,7 +128,9 @@ def ages_for_table(
     rows = np.flatnonzero(selected & finite)
 
     if references is None:
-        references = load_references()
+        references = load_references(reference_ages=reference_ages, exclude=exclude_references)
+    elif reference_ages is not None or exclude_references is not None:
+        raise ValueError("Pass reference_ages / exclude_references, or a preloaded references list, not both")
     result = infer_ages(
         color[rows], mag[rows], color_err[rows], g_err[rows],
         mh=mh_values[rows] if np.any(np.nan_to_num(mh_values[rows]) != 0) else None,
@@ -143,6 +150,7 @@ def ages_for_table(
     sigma = np.full(n_row, np.nan)
     clipped = np.zeros(n_row, dtype=bool)
     fitted = np.zeros(n_row, dtype=bool)
+    out_of_range = np.zeros(n_row, dtype=bool)
 
     young = result["limit"] == "young"
     old = result["limit"] == "old"
@@ -162,6 +170,7 @@ def ages_for_table(
     sigma[rows] = result["scatter_sigma_mag"]
     clipped[rows] = result["metallicity_clipped"]
     fitted[rows] = result["has_posterior"]
+    out_of_range[rows] = result["color_out_of_range"]
 
     frame[AGE_COLUMN] = age
     frame[LOWER_COLUMN] = lower
@@ -175,4 +184,5 @@ def ages_for_table(
     frame[MH_COLUMN] = np.where(np.isfinite(mh_values), mh_values, 0.0)
     frame[CLIPPED_COLUMN] = clipped
     frame[FITTED_COLUMN] = fitted
+    frame[COLOR_RANGE_COLUMN] = out_of_range
     return frame, result

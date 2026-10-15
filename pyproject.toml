@@ -29,7 +29,8 @@ classifiers = [
 [project.optional-dependencies]
 plot = ["matplotlib>=3.6"]
 fits = ["astropy>=5.0"]
-dev = ["pytest>=7", "matplotlib>=3.6"]
+dust = ["h5py>=3.0", "astropy>=5.0"]
+dev = ["pytest>=7", "matplotlib>=3.6", "h5py>=3.0", "astropy>=5.0"]
 
 [project.scripts]
 cmd-interp = "cmd_interp.cli:main"

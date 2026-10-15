@@ -16,6 +16,7 @@ from .scatter import exact_local_scatter, fill_scatter, nearest_two_scatter
 SCATTER_MODES = ("hybrid", "nearest_two", "interpolated", "interpolated_fill")
 DEFAULT_SCATTER_MODE = "hybrid"
 DEFAULT_SYSTEMATIC_MAG = 0.05
+MAX_COLOR = 3.0   # (BP-RP)_0; redder stars get no age (NaN)
 
 
 def infer_ages(
@@ -28,6 +29,10 @@ def infer_ages(
     systematic_mag=DEFAULT_SYSTEMATIC_MAG,
     scatter_mode=DEFAULT_SCATTER_MODE,
     references=None,
+    reference_ages=None,
+    exclude_references=None,
+    max_color=MAX_COLOR,
+    min_color=None,
     binary_fraction=0.0,
     binary_dm=(),
     binary_dm_weights=None,
@@ -67,6 +72,15 @@ def infer_ages(
         systematic always enter in quadrature.
     references : list, optional
         Output of load_references(); defaults to the bundled six-cluster library.
+    reference_ages : dict, optional
+        New ages (Myr) for any of the reference clusters, e.g. ``{"beta_Pic": 21.0}`` or
+        ``{"Pleiades": 112}``; the other references keep their adopted ages
+        (cmd_interp.REFERENCE_AGES).
+    exclude_references : list of str, optional
+        Reference clusters to leave out.
+    max_color, min_color : float or None
+        Stars with (BP-RP)_0 outside [min_color, max_color] get no age (NaN) and
+        ``color_out_of_range = True``.  Default: redder than 3.0 is excluded, no blue cut.
     binary_fraction, binary_dm, binary_dm_weights :
         Optional unresolved-binary mixture: at every age the magnitude likelihood is
         (1 - f_b) N(M_G; m_t, s) + f_b sum_k w_k N(M_G; m_t - dm_k, s).  Off by default.
@@ -86,7 +100,7 @@ def infer_ages(
         oldest, '' otherwise), has_posterior, n_references, scatter_sigma_mag,
         youngest_age, oldest_age, youngest_mag, oldest_mag (metallicity-shifted),
         mh, metallicity_clipped, posterior (n_star, n_age; unit-sum node weights, zero for
-        stars without a fit) and age_grid_myr (n_age).
+        stars without a fit), color_out_of_range, and age_grid_myr (n_age).
 
     Notes
     -----
@@ -110,7 +124,9 @@ def infer_ages(
     if int(n_color_quadrature) != n_color_quadrature or n_color_quadrature < 1:
         raise ValueError("n_color_quadrature must be a positive integer")
     if references is None:
-        references = load_references()
+        references = load_references(reference_ages=reference_ages, exclude=exclude_references)
+    elif reference_ages is not None or exclude_references is not None:
+        raise ValueError("Pass reference_ages / exclude_references, or a preloaded references list, not both")
     if len(references) < 2:
         raise ValueError("At least two references are needed")
 
@@ -121,6 +137,14 @@ def infer_ages(
         bw = np.ones(len(binary_dm)) if binary_dm_weights is None else np.asarray(binary_dm_weights, dtype=float)
         log_binary_w = np.log(binary_fraction * bw / bw.sum())
 
+    color_out_of_range = np.zeros(n_star, dtype=bool)
+    if max_color is not None:
+        color_out_of_range |= color > max_color
+    if min_color is not None:
+        color_out_of_range |= color < min_color
+    usable = (np.isfinite(color) & np.isfinite(abs_g) & np.isfinite(color_err) & (color_err >= 0)
+              & np.isfinite(abs_g_err) & (abs_g_err >= 0) & ~color_out_of_range)
+
     # metallicity: per-star [M/H], NaN -> solar; all-solar skips the shift entirely
     mh_star = np.zeros(n_star) if mh is None else np.broadcast_to(np.asarray(mh, dtype=float), color.shape).copy()
     mh_star[~np.isfinite(mh_star)] = 0.0
@@ -130,7 +154,7 @@ def infer_ages(
     if use_mh:
         offset = parsec_offset() if metallicity_offset is None else metallicity_offset
         if hasattr(offset, "clipped"):
-            metallicity_clipped = np.asarray(offset.clipped(mh_star, color), dtype=bool) & (mh_star != 0)
+            metallicity_clipped = np.asarray(offset.clipped(mh_star, color), dtype=bool) & (mh_star != 0) & usable
             if metallicity_clipped.any():
                 warnings.warn(
                     f"{int(metallicity_clipped.sum())} star(s) have [M/H] or (BP-RP)_0 outside the PARSEC offset "
@@ -140,8 +164,6 @@ def infer_ages(
 
     ref_age = np.array([reference["age_myr"] for reference in references])
     full_age_grid = _age_grid(ref_age, age_step_myr=age_step_myr)
-    usable = (np.isfinite(color) & np.isfinite(abs_g) & np.isfinite(color_err) & (color_err >= 0)
-              & np.isfinite(abs_g_err) & (abs_g_err >= 0))
 
     cover = np.vstack([(color >= r["color"][0]) & (color <= r["color"][-1]) & usable for r in references])
     hermite_nodes, hermite_weights = np.polynomial.hermite.hermgauss(int(n_color_quadrature))
@@ -279,6 +301,7 @@ def infer_ages(
         if verbose:
             print(f"coverage group {n_groups_done}/{len(patterns)} ({len(refs)} references, {len(members):,} stars) done", flush=True)
 
+    youngest_mag[~usable] = oldest_mag[~usable] = youngest_age[~usable] = oldest_age[~usable] = np.nan
     covered = n_refs_used >= 2
     brighter = covered & (abs_g < youngest_mag)
     fainter = covered & (abs_g > oldest_mag)
@@ -301,6 +324,7 @@ def infer_ages(
         "oldest_mag": oldest_mag,
         "mh": mh_star,
         "metallicity_clipped": metallicity_clipped,
+        "color_out_of_range": color_out_of_range,
         "age_grid_myr": full_age_grid,
     }
     if return_posterior or posterior_out is not None:

@@ -16,8 +16,10 @@ FIXTURE = Path(__file__).parent / "data" / "hyb05_regression.npz"
 def test_defaults_reproduce_reference_pipeline():
     ref = np.load(FIXTURE)
     result = ci.infer_ages(ref["color"], ref["abs_g"], ref["color_err"], ref["abs_g_err"])
+    red = ref["color"] > ci.MAX_COLOR                                  # no ages redward of (BP-RP)_0 = 3
+    assert red.sum() > 5 and np.all(np.isnan(result["age_map_myr"][red])) and result["color_out_of_range"][red].all()
     above = (result["n_references"] >= 2) & (ref["abs_g"] < result["youngest_mag"])
-    keep = ~above
+    keep = ~above & ~red
     assert keep.sum() > 100 and above.sum() > 10
     for key in ("age_map_myr", "age_myr_025", "age_myr_16", "age_myr_50", "age_myr_84", "age_myr_975"):
         np.testing.assert_allclose(result[key][keep], ref[key][keep], rtol=1e-9, equal_nan=True, err_msg=key)
