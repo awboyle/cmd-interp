@@ -1,8 +1,7 @@
-"""The package reproduces the original research pipeline (hybrid scatter, 0.05 mag systematic), except for stars
-brighter than the youngest covering sequence (see test_bright_side.py).
+"""Regression test of the default model (hybrid scatter, 0.05 mag systematic).
 
-tests/data/hyb05_regression.npz was produced by the original batch_empirical_isochrone_ages.infer_batch
-on 200 synthetic stars."""
+tests/data/default_model_regression.npz holds frozen reference outputs for 200 synthetic stars. Stars brighter
+than the youngest covering sequence are excluded here and tested in test_bright_side.py."""
 
 from pathlib import Path
 
@@ -10,10 +9,10 @@ import numpy as np
 
 import cmd_interp as ci
 
-FIXTURE = Path(__file__).parent / "data" / "hyb05_regression.npz"
+FIXTURE = Path(__file__).parent / "data" / "default_model_regression.npz"
 
 
-def test_defaults_reproduce_reference_pipeline():
+def test_defaults_reproduce_frozen_outputs():
     ref = np.load(FIXTURE)
     result = ci.infer_ages(ref["color"], ref["abs_g"], ref["color_err"], ref["abs_g_err"])
     red = ref["color"] > ci.MAX_COLOR                                  # no ages redward of (BP-RP)_0 = 3

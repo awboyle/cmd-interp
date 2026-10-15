@@ -10,5 +10,6 @@ venv/
 .DS_Store
 cmd_interp_output/
 
-# personal working notebook (kept locally, not in the repo)
+# personal working files (kept locally, not in the repo)
 examples/cmd_interp_quickstart.ipynb
+scripts/make_quickstart_notebook.py
