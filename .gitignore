@@ -8,3 +8,4 @@ venv/
 .pytest_cache/
 .ipynb_checkpoints/
 .DS_Store
+cmd_interp_output/
