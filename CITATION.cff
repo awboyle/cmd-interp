@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use cmd-interp, please cite it as below, together with the data sources listed in the README."
+title: "cmd-interp: stellar ages from empirical cluster sequences in the Gaia colour-magnitude diagram"
+authors:
+  - family-names: Boyle
+    given-names: Andrew
+version: 0.1.0
+date-released: 2026-10-15
+license: MIT
+repository-code: "https://github.com/awboyle/cmd-interp"
+keywords:
+  - stellar ages
+  - pre-main sequence
+  - colour-magnitude diagram
+  - Gaia

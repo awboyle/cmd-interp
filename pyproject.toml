@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cmd-interp"
+version = "0.1.0"
+description = "Stellar ages from empirical cluster sequences in the Gaia colour-magnitude diagram"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Andrew Boyle" }]
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.23",
+    "scipy>=1.9",
+    "pandas>=1.5",
+    "pyarrow>=10",
+]
+keywords = ["astronomy", "stellar ages", "colour-magnitude diagram", "pre-main sequence", "Gaia"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
+
+[project.optional-dependencies]
+plot = ["matplotlib>=3.6"]
+fits = ["astropy>=5.0"]
+dev = ["pytest>=7", "matplotlib>=3.6"]
+
+[project.scripts]
+cmd-interp = "cmd_interp.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/awboyle/cmd-interp"
+Issues = "https://github.com/awboyle/cmd-interp/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cmd_interp"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "scripts", "examples", "README.md", "LICENSE", "CITATION.cff", "CHANGELOG.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
