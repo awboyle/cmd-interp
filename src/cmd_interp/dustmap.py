@@ -8,52 +8,80 @@ dA_0/dd at the star is also returned, so the distance error can be propagated in
 Beyond the edge of a cube, A_0 is frozen at its edge value and the edge density is used as
 the gradient.
 
-The cubes are not shipped with the package (~200 MB and ~30 MB).  Download them from the
-EXPLORE G-Tomo service (https://explore-platform.eu), then point to them with:
+The cubes are not shipped with the package (~220 MB and ~40 MB).  Download the FITS cubes
+explore_cube_density_values_010pc_v2.fits and explore_cube_density_errors_050pc_v2.fits from
+the CDS record of Vergely et al. (2022), J/A+A/664/A174
+(https://cdsarc.cds.unistra.fr/viz-bin/cat/J/A+A/664/A174), then point to them with:
 
     ExploreDustMap(values_path, errors_path)
 
 or set the environment variables CMD_INTERP_EXPLORE_VALUES and CMD_INTERP_EXPLORE_ERRORS,
-or CMD_INTERP_DUST_DIR for a directory that holds the default file names
-(explore_cube_density_values_010pc_v2.h5, explore_cube_density_errors_050pc_v2.h5).
+or CMD_INTERP_DUST_DIR for a directory that holds the default file names.  The HDF5 versions
+of the same cubes distributed by the EXPLORE G-Tomo service (.h5) are also accepted and need
+h5py.
 
-Requires h5py and astropy: pip install "cmd-interp[dust]".
+Requires astropy: pip install "cmd-interp[dust]".
 """
 
 from __future__ import annotations
 
+import importlib
 import os
 from pathlib import Path
 
 import numpy as np
 import scipy.interpolate as spi
 
-DEFAULT_VALUES_FILE = "explore_cube_density_values_010pc_v2.h5"
-DEFAULT_ERRORS_FILE = "explore_cube_density_errors_050pc_v2.h5"
+DEFAULT_VALUES_STEM = "explore_cube_density_values_010pc_v2"
+DEFAULT_ERRORS_STEM = "explore_cube_density_errors_050pc_v2"
+CUBE_SUFFIXES = (".fits", ".fits.gz", ".h5")
+DEFAULT_VALUES_FILE = DEFAULT_VALUES_STEM + CUBE_SUFFIXES[0]
+DEFAULT_ERRORS_FILE = DEFAULT_ERRORS_STEM + CUBE_SUFFIXES[0]
 STEP_PC = 5
 
 
-def _require(module):
+def _require(module, hint='pip install "cmd-interp[dust]"'):
     try:
-        return __import__(module)
+        return importlib.import_module(module)
     except ImportError as error:  # pragma: no cover
-        raise ImportError(f'The dust-map option needs {module}: pip install "cmd-interp[dust]"') from error
+        raise ImportError(f"The dust-map option needs {module}: {hint}") from error
 
 
-def load_cube(hdf5file):
-    """Load an EXPLORE cube and the coordinates of its axes, with the Sun at (0, 0, 0) (pc).
+def _read_fits(path):
+    """The CDS FITS cube: NAXIS1/2/3 = X/Y/Z, so the array is transposed to (X, Y, Z)."""
+    fits = _require("astropy.io.fits")
+    with fits.open(path, memmap=False) as hdul:
+        header = hdul[0].header
+        cube = np.ascontiguousarray(hdul[0].data.T, dtype=np.float32)
+    headers = {k: header[k] for k in header}
+    headers["new_sun_position"] = np.array([header["SUN_POSX"], header["SUN_POSY"], header["SUN_POSZ"]], dtype=float)
+    headers["gridstep_values"] = np.full(3, float(header["STEP"]))
+    return headers, cube
 
-    Returns (headers, cube, axes, min_axes, max_axes).  Original reader by N. Leclerc,
-    G. Plum and S. Ferron.
-    """
-    h5py = _require("h5py")
-    with h5py.File(hdf5file, "r") as hf:
+
+def _read_hdf5(path):
+    """The EXPLORE G-Tomo HDF5 cube (explore/cube_datas, already (X, Y, Z))."""
+    h5py = _require("h5py", hint="pip install h5py")
+    with h5py.File(path, "r") as hf:
         cube = hf["explore/cube_datas"][:]
         headers = {k: v for k, v in hf["explore/cube_datas"].attrs.items()}
     sun_position = headers["sun_position"]
+    headers["new_sun_position"] = np.append(sun_position[1:], sun_position[0])
+    headers["gridstep_values"] = np.asarray(headers["gridstep_values"], dtype=float)
+    return headers, cube
+
+
+def load_cube(path):
+    """Load an EXPLORE cube (FITS from CDS, or HDF5 from the G-Tomo service) and the coordinates
+    of its axes, with the Sun at (0, 0, 0) (pc).
+
+    Returns (headers, cube, axes, min_axes, max_axes).  Original HDF5 reader by N. Leclerc,
+    G. Plum and S. Ferron.
+    """
+    path = Path(path)
+    headers, cube = _read_hdf5(path) if path.suffix.lower() in (".h5", ".hdf5") else _read_fits(path)
+    new_sun_position = headers["new_sun_position"]
     gridstep_values = headers["gridstep_values"]
-    new_sun_position = np.append(sun_position[1:], sun_position[0])
-    headers["new_sun_position"] = new_sun_position
     headers["values_unit"] = "A0(550nm)/parsec"
     min_axes = -1 * new_sun_position * gridstep_values
     max_axes = np.abs(min_axes)
@@ -88,19 +116,31 @@ def _line_of_sight(unit_xyz, target_distance, cube, axes, max_axes, step_pc=STEP
     return float(np.around(extinction, decimals=5)), float(gradient)
 
 
+def _default_cube(dust_dir, stem):
+    """<dust_dir>/<stem> with the first suffix of CUBE_SUFFIXES that exists (the .fits name if none does)."""
+    if not dust_dir:
+        return None
+    for suffix in CUBE_SUFFIXES:
+        candidate = Path(dust_dir) / (stem + suffix)
+        if candidate.exists():
+            return candidate
+    return Path(dust_dir) / (stem + CUBE_SUFFIXES[0])
+
+
 class ExploreDustMap:
     """The EXPLORE density and density-error cubes, loaded once and queried star by star."""
 
     def __init__(self, values_path=None, errors_path=None, step_pc=STEP_PC):
         dust_dir = os.environ.get("CMD_INTERP_DUST_DIR")
         if values_path is None:
-            values_path = os.environ.get("CMD_INTERP_EXPLORE_VALUES") or (dust_dir and Path(dust_dir) / DEFAULT_VALUES_FILE)
+            values_path = os.environ.get("CMD_INTERP_EXPLORE_VALUES") or _default_cube(dust_dir, DEFAULT_VALUES_STEM)
         if errors_path is None:
-            errors_path = os.environ.get("CMD_INTERP_EXPLORE_ERRORS") or (dust_dir and Path(dust_dir) / DEFAULT_ERRORS_FILE)
+            errors_path = os.environ.get("CMD_INTERP_EXPLORE_ERRORS") or _default_cube(dust_dir, DEFAULT_ERRORS_STEM)
         if not values_path or not errors_path:
             raise FileNotFoundError(
                 "EXPLORE cubes not found: pass ExploreDustMap(values_path, errors_path) or set CMD_INTERP_DUST_DIR "
-                f"(holding {DEFAULT_VALUES_FILE} and {DEFAULT_ERRORS_FILE})"
+                f"to a folder holding {DEFAULT_VALUES_FILE} and {DEFAULT_ERRORS_FILE} (download them from "
+                "https://cdsarc.cds.unistra.fr/viz-bin/cat/J/A+A/664/A174)"
             )
         self.values_path, self.errors_path, self.step_pc = Path(values_path), Path(errors_path), step_pc
         _, self._values, self._values_axes, _, self._values_max = load_cube(self.values_path)

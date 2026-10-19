@@ -3,7 +3,7 @@
 1. de-reddened photometry and uncertainties in hand;
 2. Gaia photometry and an extinction, uncertainties derived for you (needs network access);
 3. a Gaia DR3 source ID alone, extinction from the EXPLORE 3D dust maps (needs network access and the
-   dust cubes, see README);
+   FITS dust cubes from CDS J/A+A/664/A174, see README);
 4. the same with a known metallicity.
 
 Examples 2-4 are skipped when the archive or the dust maps are not available.

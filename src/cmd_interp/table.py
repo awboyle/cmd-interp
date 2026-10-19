@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .core import DEFAULT_SCATTER_MODE, DEFAULT_SYSTEMATIC_MAG, infer_ages
+from .core import DEFAULT_SYSTEMATIC_MAG, infer_ages
 from .references import load_references
 
 DEFAULT_ABS_G_ERR = 0.03   # mag; used where the table has no (valid) per-star absolute-G error
@@ -70,7 +70,6 @@ def ages_for_table(
     mh_col=None,
     fit_mask=None,
     systematic_mag=DEFAULT_SYSTEMATIC_MAG,
-    scatter_mode=DEFAULT_SCATTER_MODE,
     references=None,
     reference_ages=None,
     exclude_references=None,
@@ -90,7 +89,7 @@ def ages_for_table(
         Main-sequence stars get broad, uninformative posteriors from this method.
     reference_ages / exclude_references: new ages (Myr) for any reference cluster, e.g.
         ``{"beta_Pic": 21.0}``, and clusters to leave out; see infer_ages().
-    Other keyword arguments are passed to infer_ages() (e.g. max_color, binary_fraction).
+    Other keyword arguments are passed to infer_ages() (e.g. max_color, min_color).
 
     Returns (table, result): a copy of the table with the cmd_age_* columns appended, and the
     infer_ages() output for the fitted rows (``result['row']`` gives their positions in the
@@ -135,7 +134,7 @@ def ages_for_table(
     result = infer_ages(
         color[rows], mag[rows], color_err[rows], g_err[rows],
         mh=mh_values[rows] if np.any(np.nan_to_num(mh_values[rows]) != 0) else None,
-        systematic_mag=systematic_mag, scatter_mode=scatter_mode, references=references,
+        systematic_mag=systematic_mag, references=references,
         return_posterior=return_posterior, posterior_out=posterior_out, **{"_warn_stacklevel": 3, **kwargs},
     )
     result["row"] = rows

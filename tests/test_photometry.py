@@ -89,3 +89,34 @@ def test_dust_map_on_a_uniform_cube(tmp_path):
     np.testing.assert_allclose(out.extinction_a0_err_cube, err_density * (out.distance + 5), rtol=1e-3)
     np.testing.assert_allclose(out.extinction_a0_gradient, density, rtol=1e-5)
     assert np.all(out.extinction_a0_err > out.extinction_a0_err_cube)  # distance term added
+
+
+def test_fits_and_hdf5_cubes_agree(tmp_path):
+    """The CDS FITS cubes (NAXIS1/2/3 = X/Y/Z) and the G-Tomo HDF5 cubes give the same A_0."""
+    h5py = pytest.importorskip("h5py")
+    fits = pytest.importorskip("astropy.io.fits")
+    rng = np.random.default_rng(1)
+    cube = rng.uniform(0, 2e-3, size=(61, 61, 21)).astype(np.float32)   # (X, Y, Z), 20 pc steps, Sun off-centre
+    sun_xyz = np.array([30.5, 30.5, 10.5])
+    for name, value in (("values", cube), ("errors", 0.1 * cube)):
+        with h5py.File(tmp_path / f"{name}.h5", "w") as hf:
+            d = hf.create_dataset("explore/cube_datas", data=value)
+            d.attrs["sun_position"] = np.array([sun_xyz[2], sun_xyz[0], sun_xyz[1]])   # HDF5 convention: (Z, X, Y)
+            d.attrs["gridstep_values"] = np.array([20, 20, 20])
+        header = fits.Header()
+        header["STEP"], header["RESOL"], header["UNIT"] = 20, 50, "A0(550nm)/parsec"
+        header["SUN_POSX"], header["SUN_POSY"], header["SUN_POSZ"] = sun_xyz
+        fits.PrimaryHDU(data=value.T, header=header).writeto(tmp_path / f"{name}.fits")   # FITS stores (Z, Y, X)
+    s = _stars().reset_index(drop=True)
+    via_h5 = ci.deredden_gaia(s, a0="dustmap", dust_map=ci.ExploreDustMap(tmp_path / "values.h5", tmp_path / "errors.h5"))
+    via_fits = ci.deredden_gaia(s, a0="dustmap", dust_map=ci.ExploreDustMap(tmp_path / "values.fits", tmp_path / "errors.fits"))
+    for col in ("extinction_a0", "extinction_a0_err_cube", "extinction_a0_gradient"):
+        np.testing.assert_allclose(via_fits[col], via_h5[col], rtol=1e-6, err_msg=col)
+    assert np.all(via_fits.extinction_a0 > 0)
+    # the directory lookup prefers the FITS name and falls back to .h5
+    (tmp_path / "explore_cube_density_values_010pc_v2.h5").write_bytes((tmp_path / "values.h5").read_bytes())
+    (tmp_path / "explore_cube_density_errors_050pc_v2.fits").write_bytes((tmp_path / "errors.fits").read_bytes())
+    found = ci.ExploreDustMap.__init__.__globals__["_default_cube"]
+    assert found(tmp_path, "explore_cube_density_values_010pc_v2").suffix == ".h5"
+    assert found(tmp_path, "explore_cube_density_errors_050pc_v2").suffix == ".fits"
+    assert found(tmp_path, "missing").suffix == ".fits"

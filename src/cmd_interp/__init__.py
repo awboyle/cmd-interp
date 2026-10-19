@@ -1,7 +1,6 @@
 """cmd-interp: stellar ages from empirical cluster sequences in the Gaia colour-magnitude diagram."""
 
-from .core import (BLUE_CAUTION_COLOR, DEFAULT_SCATTER_MODE, DEFAULT_SYSTEMATIC_MAG, MAX_COLOR, BlueColorWarning,
-                   infer_ages, star_age)
+from .core import BLUE_CAUTION_COLOR, DEFAULT_SYSTEMATIC_MAG, MAX_COLOR, BlueColorWarning, infer_ages, star_age
 from .dustmap import ExploreDustMap
 from .gaia import ages_from_gaia, query_gaia_dr3, star_age_from_gaia
 from .grid import age_grid, node_widths, posterior_density
@@ -15,7 +14,6 @@ __version__ = "0.1.0"
 __all__ = [
     "BLUE_CAUTION_COLOR",
     "BlueColorWarning",
-    "DEFAULT_SCATTER_MODE",
     "DEFAULT_SYSTEMATIC_MAG",
     "ExploreDustMap",
     "MAX_COLOR",

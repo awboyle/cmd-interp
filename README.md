@@ -1,6 +1,6 @@
 # cmd-interp
 
-**Stellar ages from a star's position in the Gaia colour–magnitude diagram (CMD), interpolated
+**Stellar ages from a star's position in the Gaia color–magnitude diagram (CMD), interpolated
 between the empirical sequences of benchmark clusters rather than theoretical isochrones.**
 
 The method is designed for pre-main-sequence stars, roughly 5–700 Myr old. K and M dwarfs are still
@@ -28,7 +28,7 @@ Optional extras:
 
 ```bash
 pip install "cmd-interp[gaia] @ git+https://github.com/awboyle/cmd-interp"   # astroquery, to start from Gaia DR3 IDs
-pip install "cmd-interp[dust] @ git+https://github.com/awboyle/cmd-interp"   # h5py + astropy, for the 3D dust maps
+pip install "cmd-interp[dust] @ git+https://github.com/awboyle/cmd-interp"   # astropy, for the 3D dust maps
 pip install "cmd-interp[plot] @ git+https://github.com/awboyle/cmd-interp"   # matplotlib, for the diagnostic figures
 ```
 
@@ -36,7 +36,7 @@ Requires Python ≥ 3.10, numpy, scipy, pandas and pyarrow. The reference sequen
 
 ## Quick start
 
-The fit needs four numbers per star: the extinction-corrected colour (G_BP − G_RP)₀, the
+The fit needs four numbers per star: the extinction-corrected color (G_BP − G_RP)₀, the
 extinction-corrected absolute magnitude M_G,0, and their uncertainties. The examples below start from
 progressively less: those four numbers, then Gaia photometry plus an extinction, then a Gaia DR3
 source ID alone, and finally the same with a known metallicity. Every code block is self-contained
@@ -52,7 +52,7 @@ import cmd_interp
 
 color = 2.0          # (G_BP - G_RP)_0, extinction-corrected
 abs_g = 8.0          # M_G,0, absolute and extinction-corrected
-color_err = 0.01     # 1-sigma uncertainty of the colour (mag)
+color_err = 0.01     # 1-sigma uncertainty of the color (mag)
 abs_g_err = 0.03     # 1-sigma uncertainty of the absolute magnitude (mag)
 
 star = cmd_interp.star_age(color=color, abs_g=abs_g, color_err=color_err, abs_g_err=abs_g_err)
@@ -77,7 +77,7 @@ import cmd_interp
 
 color = np.array([1.2, 2.0, 2.6])            # (G_BP - G_RP)_0 of each star
 abs_g = np.array([5.5, 8.0, 10.4])           # M_G,0 of each star
-color_err = np.array([0.01, 0.01, 0.02])     # colour uncertainties (mag)
+color_err = np.array([0.01, 0.01, 0.02])     # color uncertainties (mag)
 abs_g_err = np.array([0.03, 0.03, 0.05])     # magnitude uncertainties (mag)
 
 result = cmd_interp.infer_ages(color, abs_g, color_err, abs_g_err)
@@ -101,7 +101,7 @@ stars = pd.DataFrame({
     "name": ["star A", "star B", "star C"],
     "BpmRp0": [1.2, 2.0, 2.6],                   # (G_BP - G_RP)_0
     "phot_g_mean_mag_0": [5.5, 8.0, 10.4],       # M_G,0
-    "BpmRp0_err": [0.01, 0.01, 0.02],            # colour uncertainty (mag)
+    "BpmRp0_err": [0.01, 0.01, 0.02],            # color uncertainty (mag)
     "phot_g_mean_mag_0_err": [0.03, 0.03, 0.05], # magnitude uncertainty (mag)
 })
 
@@ -240,10 +240,12 @@ print(star["age_map_myr"])                                                      
 With the EXPLORE 3D dust maps, one source ID is enough: the package queries the Gaia archive
 (anonymously), integrates the dust map to the star's distance to get A_0 and its uncertainty, corrects
 the photometry, propagates every uncertainty, and fits the age. This needs the `gaia` and `dust`
-extras and a one-time download of the two dust cubes (~230 MB) from the
-[EXPLORE G-Tomo service](https://explore-platform.eu): `explore_cube_density_values_010pc_v2.h5` and
-`explore_cube_density_errors_050pc_v2.h5`. Put them in a folder and point the package at it, either
-in the shell before starting Python:
+extras and a one-time download of two FITS cubes (~260 MB) from the CDS record of
+[Vergely et al. (2022), J/A+A/664/A174](https://cdsarc.cds.unistra.fr/viz-bin/cat/J/A+A/664/A174#/browse):
+`explore_cube_density_values_010pc_v2.fits` (the extinction density, 10 pc resolution) and
+`explore_cube_density_errors_050pc_v2.fits` (its error, 50 pc resolution), both in the `fits/`
+subdirectory. Put them in a folder and point the package at it, either in the shell before starting
+Python:
 
 ```bash
 export CMD_INTERP_DUST_DIR=/path/to/explore_cubes
@@ -255,7 +257,7 @@ or from Python:
 import os
 import cmd_interp
 
-os.environ["CMD_INTERP_DUST_DIR"] = "/path/to/explore_cubes"   # folder holding the two .h5 cubes
+os.environ["CMD_INTERP_DUST_DIR"] = "/path/to/explore_cubes"   # folder holding the two .fits cubes
 source_id = 64895139073954944                                  # a Pleiades M dwarf
 
 star = cmd_interp.star_age_from_gaia(source_id, a0="dustmap")
@@ -270,8 +272,8 @@ Or pass the cube paths explicitly:
 import cmd_interp
 
 dust = cmd_interp.ExploreDustMap(
-    "/path/to/explore_cubes/explore_cube_density_values_010pc_v2.h5",
-    "/path/to/explore_cubes/explore_cube_density_errors_050pc_v2.h5",
+    "/path/to/explore_cubes/explore_cube_density_values_010pc_v2.fits",
+    "/path/to/explore_cubes/explore_cube_density_errors_050pc_v2.fits",
 )
 source_ids = [64895139073954944, 6794047652729201024]   # a Pleiades M dwarf, AU Mic
 
@@ -289,13 +291,14 @@ The same works from the command line:
 cmd-interp gaia 64895139073954944 --dustmap --plot pleiades_star.png
 ```
 
-Without the dust maps you must give A_0 yourself (example 2); A_0 = 0 is a fine approximation for
-stars within a few tens of parsecs.
+The HDF5 versions of the same cubes from the [EXPLORE G-Tomo service](https://explore-platform.eu)
+(`.h5`, needs `h5py`) are accepted too. Without the dust maps you must give A_0 yourself (example 2);
+A_0 = 0 is a fine approximation for stars within a few tens of parsecs.
 
 ### 4. You know the metallicity
 
 The reference sequences are solar-metallicity clusters. A metal-poor star sits below the solar sequence
-at fixed colour, so it would be read as older than it is, and a metal-rich star as younger. If you have
+at fixed color, so it would be read as older than it is, and a metal-rich star as younger. If you have
 [M/H] for the star, pass it as `mh` and the sequences are shifted to that metallicity (using PARSEC
 isochrone offsets) before the comparison:
 
@@ -367,14 +370,14 @@ than metal-rich ones.
 
 ## Things to know
 
-- **Colour range.** Stars redder than (BP−RP)₀ = 3.0 get no age (NaN, flagged `color_out_of_range`;
+- **Color range.** Stars redder than (BP−RP)₀ = 3.0 get no age (NaN, flagged `color_out_of_range`;
   change with `max_color=`). Bluer than 0.8 the reference sequences start to cross and ages there should
   be used with care: such stars are flagged `blue_caution` and raise a `cmd_interp.BlueColorWarning`
   (silence it with `warnings.filterwarnings("ignore", category=cmd_interp.BlueColorWarning)`).
 - **Main-sequence stars.** Only stars still above the main sequence carry real age information. Once a
   star has settled on the main sequence it comes back as an old limit with a broad posterior.
-- **Binaries.** Unresolved binaries are brighter and therefore look younger. Remove them beforehand, or
-  enable the binary mixture (`binary_fraction=`, `binary_dm=`; see the options table below).
+- **Binaries.** Unresolved binaries are brighter and therefore look younger. Remove them beforehand
+  (for example with RUWE or the Gaia non-single-star tables); the fit treats every star as single.
 - **Posteriors** are unit-sum node weights on an age grid that mixes 1 Myr and 5 Myr steps; use
   `posterior_density` to get a density per Myr before plotting or combining with other age likelihoods:
 
@@ -403,7 +406,7 @@ cmd-interp table --help
 
 `--posterior-output` writes the posteriors as a float32 array, the age grid, and an index giving the
 table row of each posterior. They are written as they are computed, so memory stays bounded for large
-catalogues (about 5 GB per million stars).
+catalogs (about 5 GB per million stars).
 
 ## Plots
 
@@ -459,24 +462,19 @@ Other options accepted by every entry point:
 |---|---|---|
 | `systematic_mag` | 0.05 | extra magnitude scatter added in quadrature at every age |
 | `mh` | solar | stellar [M/H] |
-| `binary_fraction`, `binary_dm` | off | unresolved-binary mixture: with probability f_b the star is brighter than the sequence by `binary_dm` |
 | `reference_ages`, `exclude_references` | defaults | change or drop reference clusters |
 | `max_color`, `min_color` | 3.0, none | (BP−RP)₀ range that receives ages |
-| `scatter_mode` | `"hybrid"` | how the width of the reference sequences enters the likelihood |
 
-For example, a fit that allows 30% of stars to be equal-mass binaries (0.75 mag brighter) with a
-larger systematic term:
+For example, a fit with a larger systematic term:
 
 ```python
 import cmd_interp
 
 star = cmd_interp.star_age(
     color=2.0, abs_g=8.0, color_err=0.01, abs_g_err=0.03,
-    binary_fraction=0.3,      # prior probability that the star is an unresolved binary
-    binary_dm=(0.75,),        # brightening (mag) of the binary component(s) of the mixture
-    systematic_mag=0.08,      # extra scatter (mag) added in quadrature at every age
+    systematic_mag=0.08,      # extra scatter (mag) added in quadrature at every age; default 0.05
 )
-print(star["age_map_myr"])
+print(star["age_map_myr"], star["age_myr_16"], star["age_myr_84"])   # 74.5 60.0 86.0
 ```
 
 How the likelihood, the sequence widths, the prior and the flat extension outside the library are
@@ -490,7 +488,7 @@ defined, and how the ages compare with independent cluster ages, is in the paper
 - **β Pic age:** Binks & Jeffries (2014).
 - **Metallicity offsets:** PARSEC v1.2S (Bressan et al. 2012), via the CMD 3.7 web interface.
 - **Extinction law:** Fitzpatrick et al. (2019) Gaia EDR3 coefficients (included).
-- **3D dust maps:** EXPLORE, Vergely et al. (2022) (not included).
+- **3D dust maps:** EXPLORE, Vergely et al. (2022, A&A 664, A174), [CDS J/A+A/664/A174](https://cdsarc.cds.unistra.fr/viz-bin/cat/J/A+A/664/A174) (not included).
 - **Photometric zero points:** Riello et al. (2021).
 - **Parallax-uncertainty inflation:** arXiv:2206.05439.
 

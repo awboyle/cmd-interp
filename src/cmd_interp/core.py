@@ -13,8 +13,6 @@ from .metallicity import parsec_offset
 from .references import load_references
 from .scatter import exact_local_scatter, fill_scatter, nearest_two_scatter
 
-SCATTER_MODES = ("hybrid", "nearest_two", "interpolated", "interpolated_fill")
-DEFAULT_SCATTER_MODE = "hybrid"
 DEFAULT_SYSTEMATIC_MAG = 0.05
 MAX_COLOR = 3.0   # (BP-RP)_0; redder stars get no age (NaN)
 BLUE_CAUTION_COLOR = 0.8   # (BP-RP)_0; bluer than this the reference sequences start to cross (warning, not a cut)
@@ -39,15 +37,11 @@ def infer_ages(
     *,
     mh=None,
     systematic_mag=DEFAULT_SYSTEMATIC_MAG,
-    scatter_mode=DEFAULT_SCATTER_MODE,
     references=None,
     reference_ages=None,
     exclude_references=None,
     max_color=MAX_COLOR,
     min_color=None,
-    binary_fraction=0.0,
-    binary_dm=(),
-    binary_dm_weights=None,
     age_step_myr=1.0,
     n_color_quadrature=15,
     chunk_size=2000,
@@ -74,15 +68,6 @@ def infer_ages(
     systematic_mag : float
         Extra magnitude scatter added in quadrature at every age (field metallicity spread
         and zero point of the reference sequences).  Default 0.05.
-    scatter_mode : {'hybrid', 'nearest_two', 'interpolated', 'interpolated_fill'}
-        How the empirical scatter of the reference sequences enters sigma.  'interpolated'
-        interpolates the references' local scatter in log age; 'interpolated_fill' also
-        fills colours where a reference has too few members; 'nearest_two' uses one sigma
-        per star (mean of the two bracketing references); 'hybrid' (default) uses
-        'interpolated_fill' inside the reference envelope, 'nearest_two' for stars
-        fainter than every covering reference, and the youngest covering reference's
-        (filled) width for stars brighter than it.  The star's own abs_g_err and the
-        systematic always enter in quadrature.
     references : list, optional
         Output of load_references(); defaults to the bundled six-cluster library.
     reference_ages : dict, optional
@@ -94,9 +79,6 @@ def infer_ages(
     max_color, min_color : float or None
         Stars with (BP-RP)_0 outside [min_color, max_color] get no age (NaN) and
         ``color_out_of_range = True``.  Default: redder than 3.0 is excluded, no blue cut.
-    binary_fraction, binary_dm, binary_dm_weights :
-        Optional unresolved-binary mixture: at every age the magnitude likelihood is
-        (1 - f_b) N(M_G; m_t, s) + f_b sum_k w_k N(M_G; m_t - dm_k, s).  Off by default.
     age_step_myr : float
         Grid step between reference ages (Myr).
     return_posterior : bool
@@ -132,8 +114,6 @@ def infer_ages(
     abs_g_err = np.broadcast_to(np.asarray(abs_g_err, dtype=float), color.shape).copy()
     if abs_g.shape != color.shape:
         raise ValueError("color and abs_g must have the same length")
-    if scatter_mode not in SCATTER_MODES:
-        raise ValueError(f"scatter_mode must be one of {SCATTER_MODES}")
     if not np.isfinite(systematic_mag) or systematic_mag < 0:
         raise ValueError("systematic_mag must be finite and non-negative")
     if int(n_color_quadrature) != n_color_quadrature or n_color_quadrature < 1:
@@ -144,13 +124,6 @@ def infer_ages(
         raise ValueError("Pass reference_ages / exclude_references, or a preloaded references list, not both")
     if len(references) < 2:
         raise ValueError("At least two references are needed")
-
-    binary_dm = np.atleast_1d(np.asarray(binary_dm, dtype=float))
-    if binary_fraction > 0:
-        if not (0 < binary_fraction < 1) or not len(binary_dm):
-            raise ValueError("binary_fraction must be in (0, 1) with at least one binary_dm node")
-        bw = np.ones(len(binary_dm)) if binary_dm_weights is None else np.asarray(binary_dm_weights, dtype=float)
-        log_binary_w = np.log(binary_fraction * bw / bw.sum())
 
     color_out_of_range = np.zeros(n_star, dtype=bool)
     if max_color is not None:
@@ -224,29 +197,19 @@ def infer_ages(
         youngest_age[members], oldest_age[members] = refs[0]["age_myr"], refs[-1]["age_myr"]
         if len(refs) < 2:
             continue
-        if scatter_mode == "nearest_two":
-            star_sigma = nearest_two_scatter(abs_g[members], ref_mag, ref_scatter)
-        elif scatter_mode == "interpolated":
-            star_sigma = np.where(np.all(np.isfinite(ref_scatter), axis=0), 1.0, np.nan)
-        elif scatter_mode == "interpolated_fill":
-            # sigma(t) depends on the age only, never on which side of a sequence the star falls
-            ref_scatter = np.vstack([fill_scatter(color[members], r, ref_scatter[k]) for k, r in enumerate(refs)])
-            star_sigma = np.where(np.all(np.isfinite(ref_scatter), axis=0), 1.0, np.nan)
-        else:  # hybrid
-            # interpolated_fill inside the reference envelope; one age-independent width per star outside it, because
-            # there an age-dependent sigma makes the likelihood prefer the broadest reference instead of the nearest one.
-            # Below every covering sequence: nearest_two.  Above the youngest covering sequence: that sequence's filled
-            # width, i.e. the value sigma(t) has at the youngest age, so sigma is continuous across the sequence.
-            n2_sigma = nearest_two_scatter(abs_g[members], ref_mag, ref_scatter)
-            ref_scatter = np.vstack([fill_scatter(color[members], r, ref_scatter[k]) for k, r in enumerate(refs)])
-            fainter = abs_g[members] > ref_mag.max(axis=0)
-            brighter = abs_g[members] < ref_mag[0]
-            bright_sigma = np.where(np.isfinite(ref_scatter[0]), ref_scatter[0], n2_sigma)
-            outside = fainter | brighter
-            star_sigma = np.where(fainter, n2_sigma, np.where(
-                brighter, bright_sigma, np.where(np.all(np.isfinite(ref_scatter), axis=0), 1.0, np.nan)))
-        if scatter_mode != "hybrid":
-            outside = np.zeros(len(members), dtype=bool)
+        # Scatter prescription: the references' (filled) local scatter interpolated in log age inside the reference
+        # envelope; one age-independent width per star outside it, because there an age-dependent sigma makes the
+        # likelihood prefer the broadest reference instead of the nearest one.  Below every covering sequence: the
+        # mean width of the two nearest references.  Above the youngest covering sequence: that sequence's filled
+        # width, i.e. the value sigma(t) has at the youngest age, so sigma is continuous across the sequence.
+        n2_sigma = nearest_two_scatter(abs_g[members], ref_mag, ref_scatter)
+        ref_scatter = np.vstack([fill_scatter(color[members], r, ref_scatter[k]) for k, r in enumerate(refs)])
+        fainter = abs_g[members] > ref_mag.max(axis=0)
+        brighter = abs_g[members] < ref_mag[0]
+        bright_sigma = np.where(np.isfinite(ref_scatter[0]), ref_scatter[0], n2_sigma)
+        outside = fainter | brighter
+        star_sigma = np.where(fainter, n2_sigma, np.where(
+            brighter, bright_sigma, np.where(np.all(np.isfinite(ref_scatter), axis=0), 1.0, np.nan)))
         valid = np.isfinite(star_sigma)
         grid_mask = (full_age_grid >= sub_ages[0]) & (full_age_grid <= sub_ages[-1])
         age_grid = full_age_grid[grid_mask]
@@ -280,20 +243,13 @@ def infer_ages(
                 model_sample_mag = model_sample_mag + offset(
                     mh_star[index][None, :, None], log_age_grid[:, None, None], sample_color[None, :, :]
                 )
-            if scatter_mode == "nearest_two":
-                sigma = np.sqrt(abs_g_err[index] ** 2 + star_sigma[local] ** 2 + systematic_mag ** 2)[None, :, None]
-            else:
-                scatter_grid = PchipInterpolator(log_sub_ages, ref_scatter[:, local], axis=0, extrapolate=False)(log_age_grid)
-                sigma = np.sqrt(abs_g_err[index][None, :] ** 2 + scatter_grid ** 2 + systematic_mag ** 2)[:, :, None]
-                if outside[local].any():
-                    sigma_n2 = np.sqrt(abs_g_err[index] ** 2 + star_sigma[local] ** 2 + systematic_mag ** 2)[None, :, None]
-                    sigma = np.where(outside[local][None, :, None], sigma_n2, sigma)
+            scatter_grid = PchipInterpolator(log_sub_ages, ref_scatter[:, local], axis=0, extrapolate=False)(log_age_grid)
+            sigma = np.sqrt(abs_g_err[index][None, :] ** 2 + scatter_grid ** 2 + systematic_mag ** 2)[:, :, None]
+            if outside[local].any():
+                sigma_n2 = np.sqrt(abs_g_err[index] ** 2 + star_sigma[local] ** 2 + systematic_mag ** 2)[None, :, None]
+                sigma = np.where(outside[local][None, :, None], sigma_n2, sigma)
             residual = abs_g[index][None, :, None] - model_sample_mag
             sample_ll = -0.5 * (residual / sigma) ** 2 - np.log(sigma)
-            if binary_fraction > 0:
-                sample_ll = sample_ll + np.log1p(-binary_fraction)
-                for dm_k, lw_k in zip(binary_dm, log_binary_w):
-                    sample_ll = np.logaddexp(sample_ll, lw_k - 0.5 * ((residual + dm_k) / sigma) ** 2 - np.log(sigma))
             sample_ll = np.where(weights[None, :, :] > 0, sample_ll, -np.inf)
             sample_max = np.max(sample_ll, axis=2)
             log_likelihood = sample_max + np.log(np.sum(weights[None, :, :] * np.exp(sample_ll - sample_max[:, :, None]), axis=2))
@@ -312,7 +268,7 @@ def infer_ages(
             age_50[index] = posterior_quantile(grid_ext, dens_ext, 0.50)
             age_84[index] = posterior_quantile(grid_ext, dens_ext, 0.84)
             age_975[index] = posterior_quantile(grid_ext, dens_ext, 0.975)
-            sigma_used[index] = star_sigma[local] if scatter_mode == "nearest_two" else np.where(outside[local], star_sigma[local], np.nan)
+            sigma_used[index] = np.where(outside[local], star_sigma[local], np.nan)
             if posterior_out is not None:
                 posterior_out[np.ix_(index, ext_index)] = (dens_ext / dens_ext.sum(axis=0)).T.astype(np.float32)
         n_groups_done += 1

@@ -84,7 +84,7 @@ def ages_from_gaia(
     gaia_table: optional DataFrame of gaia_source rows (with dr3_source_id or source_id) to use
         instead of querying the archive.
     Other keyword arguments go to ages_for_table / infer_ages (systematic_mag, reference_ages,
-    exclude_references, max_color, binary_fraction, return_posterior, ...).
+    exclude_references, max_color, return_posterior, ...).
 
     Returns (table, result): one row per requested ID in the order given (found_in_gaia flags
     IDs missing from DR3), holding the gaia_source columns, the de-extincted photometry and

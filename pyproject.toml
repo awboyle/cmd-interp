@@ -29,7 +29,7 @@ classifiers = [
 [project.optional-dependencies]
 plot = ["matplotlib>=3.6"]
 fits = ["astropy>=5.0"]
-dust = ["h5py>=3.0", "astropy>=5.0"]
+dust = ["astropy>=5.0"]
 gaia = ["astroquery>=0.4.6"]
 dev = ["pytest>=7", "matplotlib>=3.6", "h5py>=3.0", "astropy>=5.0"]
 

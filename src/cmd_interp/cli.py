@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from . import __version__
-from .core import DEFAULT_SCATTER_MODE, DEFAULT_SYSTEMATIC_MAG, MAX_COLOR, SCATTER_MODES, star_age
+from .core import DEFAULT_SYSTEMATIC_MAG, MAX_COLOR, star_age
 from .grid import age_grid
 from .references import REFERENCE_AGES, load_references
 from .table import DEFAULT_ABS_G_ERR, ages_for_table, read_table, write_table
@@ -19,8 +19,6 @@ from .table import DEFAULT_ABS_G_ERR, ages_for_table, read_table, write_table
 def _add_model_arguments(parser):
     parser.add_argument("--systematic-mag", type=float, default=DEFAULT_SYSTEMATIC_MAG,
                         help=f"Extra magnitude scatter added in quadrature (default {DEFAULT_SYSTEMATIC_MAG}).")
-    parser.add_argument("--scatter-mode", choices=SCATTER_MODES, default=DEFAULT_SCATTER_MODE,
-                        help=f"Empirical-scatter prescription (default {DEFAULT_SCATTER_MODE}).")
     parser.add_argument("--reference-age", action="append", default=[], metavar="NAME=MYR",
                         help="Use a different age for a reference cluster, e.g. --reference-age beta_Pic=21 "
                              "(repeatable; aliases such as Pleiades or alpha_Per work). Defaults: "
@@ -31,10 +29,6 @@ def _add_model_arguments(parser):
                         help=f"Stars redder than this (BP-RP)_0 get no age (default {MAX_COLOR}).")
     parser.add_argument("--reference-dir", type=Path, default=None,
                         help="Use a custom reference library instead of the bundled one.")
-    parser.add_argument("--binary-fraction", type=float, default=0.0,
-                        help="Unresolved-binary mixture fraction (default 0 = off).")
-    parser.add_argument("--binary-dm", type=float, nargs="+", default=[],
-                        help="Brightening nodes (mag) of the binary component, e.g. 0.3 0.5 0.75.")
 
 
 def _references(args):
@@ -51,8 +45,7 @@ def _references(args):
 
 
 def _model_kwargs(args):
-    return dict(systematic_mag=args.systematic_mag, scatter_mode=args.scatter_mode, references=_references(args),
-                binary_fraction=args.binary_fraction, binary_dm=args.binary_dm, max_color=args.max_color)
+    return dict(systematic_mag=args.systematic_mag, references=_references(args), max_color=args.max_color)
 
 
 def build_parser():
@@ -100,8 +93,8 @@ def build_parser():
     a0.add_argument("--dustmap", action="store_true", help="Integrate the EXPLORE dust maps to each star (needs ra, dec).")
     dered.add_argument("--a0-err", type=float, default=0.0, help="Uncertainty of a supplied A_0 (default 0).")
     dered.add_argument("--a0-err-col", default=None, help="Per-star A_0 uncertainty column.")
-    dered.add_argument("--dust-values", type=Path, default=None, help="EXPLORE density cube (.h5).")
-    dered.add_argument("--dust-errors", type=Path, default=None, help="EXPLORE density-error cube (.h5).")
+    dered.add_argument("--dust-values", type=Path, default=None, help="EXPLORE density cube (.fits from CDS J/A+A/664/A174, or .h5).")
+    dered.add_argument("--dust-errors", type=Path, default=None, help="EXPLORE density-error cube (.fits or .h5).")
     dered.add_argument("--no-parallax-inflation", action="store_true", help="Use the catalogue parallax errors as they are.")
     dered.add_argument("--overwrite", action="store_true")
 
@@ -112,8 +105,8 @@ def build_parser():
     gaia_a0.add_argument("--a0", type=float, help="A_0 (mag at 550 nm) for every star.")
     gaia_a0.add_argument("--dustmap", action="store_true", help="A_0 from the EXPLORE 3D dust maps.")
     gaia.add_argument("--a0-err", type=float, default=0.0, help="Uncertainty of --a0 (default 0).")
-    gaia.add_argument("--dust-values", type=Path, default=None, help="EXPLORE density cube (.h5).")
-    gaia.add_argument("--dust-errors", type=Path, default=None, help="EXPLORE density-error cube (.h5).")
+    gaia.add_argument("--dust-values", type=Path, default=None, help="EXPLORE density cube (.fits from CDS J/A+A/664/A174, or .h5).")
+    gaia.add_argument("--dust-errors", type=Path, default=None, help="EXPLORE density-error cube (.fits or .h5).")
     gaia.add_argument("--mh", type=float, default=None, help="[M/H] for every star (default solar).")
     gaia.add_argument("--output", type=Path, default=None, help="Write the full table (.csv/.feather/.parquet).")
     gaia.add_argument("--plot", type=Path, default=None, help="CMD + posterior figure (single star only).")

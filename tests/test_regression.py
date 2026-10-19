@@ -29,5 +29,5 @@ def test_explicit_settings_match_defaults():
     ref = np.load(FIXTURE)
     a = ci.infer_ages(ref["color"], ref["abs_g"], ref["color_err"], ref["abs_g_err"], return_posterior=False)
     b = ci.infer_ages(ref["color"], ref["abs_g"], ref["color_err"], ref["abs_g_err"], return_posterior=False,
-                      scatter_mode="hybrid", systematic_mag=0.05, mh=0.0)
+                      systematic_mag=0.05, mh=0.0)
     np.testing.assert_array_equal(a["age_myr_50"], b["age_myr_50"])
