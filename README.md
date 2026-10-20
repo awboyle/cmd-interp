@@ -65,9 +65,27 @@ print(star["limit"])                                  # ''      inside the refer
 print(star["posterior"].shape, star["age_grid_myr"][:3])   # (1343,) [0.6 1.6 2.6]
 ```
 
-`star["posterior"]` is the full posterior as unit-sum weights on the age grid `star["age_grid_myr"]`.
-`limit` is `""` for a star inside the reference library, `"young"` for one brighter than the youngest
-reference sequence (only an upper limit on the age), and `"old"` for one fainter than the oldest.
+`star` is a dict with these keys:
+
+| key | meaning |
+|---|---|
+| `age_map_myr` | most probable age: the peak of the posterior (Myr) |
+| `age_myr_16`, `age_myr_84` | 16th and 84th percentiles of the posterior, the 68% credible interval (Myr) |
+| `age_myr_50` | median of the posterior (Myr) |
+| `age_myr_025`, `age_myr_975` | 2.5th and 97.5th percentiles, the 95% credible interval (Myr) |
+| `limit` | `""` inside the reference library; `"young"` if the star is brighter than the youngest reference sequence (the age is only an upper limit); `"old"` if fainter than the oldest |
+| `posterior` | the full posterior as unit-sum weights on the age grid, shape `(1343,)` |
+| `age_grid_myr` | the age grid (Myr), shape `(1343,)`, from 0.6 to 4000 Myr in mixed 1 Myr and 5 Myr steps |
+| `has_posterior` | `True` when an age was computed; `False` if fewer than two reference sequences reach the star's color, or the color is out of range |
+| `n_references` | number of reference sequences that cover the star's color (at most 6) |
+| `youngest_age`, `oldest_age` | ages (Myr) of the youngest and oldest reference sequences covering the star |
+| `youngest_mag`, `oldest_mag` | M_G of those two sequences at the star's color, i.e. the bright and faint edges of the library |
+| `scatter_sigma_mag` | likelihood width (mag) used for a star outside the library; NaN inside it, where the width varies with age |
+| `mh` | the [M/H] used in the fit (0 = solar) |
+| `metallicity_clipped` | `True` if [M/H] or the color fell outside the tabulated PARSEC offsets and the edge value was used |
+| `color_out_of_range` | `True` if the color is outside `min_color`–`max_color` (default 3.0); no age is returned |
+| `blue_caution` | `True` for (BP−RP)₀ < 0.8, where the reference sequences start to cross and ages are less reliable |
+| `color`, `abs_g`, `color_err`, `abs_g_err` | the inputs, echoed back |
 
 Many stars, as arrays:
 
@@ -88,6 +106,16 @@ print(result["age_myr_84"])       # [ 29.3  83.9 3414.5]
 print(result["limit"])            # ['' '' 'old']    the third star is fainter than the oldest sequence
 print(result["posterior"].shape)  # (3, 1343)        one row per star on result["age_grid_myr"]
 ```
+
+`result` has the same keys as `star_age` (except the echoed inputs), each now an array:
+
+| key | meaning |
+|---|---|
+| `age_map_myr`, `age_myr_16`, `age_myr_84`, `age_myr_50`, `age_myr_025`, `age_myr_975` | the point estimates and percentiles of the single-star case, one per star, shape `(n_stars,)`; NaN where no age could be computed |
+| `limit` | `""`, `"young"` or `"old"` per star |
+| `posterior` | unit-sum weights, shape `(n_stars, 1343)`, one row per star |
+| `age_grid_myr` | the common age grid (Myr), shape `(1343,)` |
+| `has_posterior`, `n_references`, `youngest_age`, `oldest_age`, `youngest_mag`, `oldest_mag`, `scatter_sigma_mag`, `mh`, `metallicity_clipped`, `color_out_of_range`, `blue_caution` | as for `star_age`, one entry per star |
 
 Many stars, as a table. `ages_for_table` reads the columns `BpmRp0`, `phot_g_mean_mag_0`,
 `BpmRp0_err` and `phot_g_mean_mag_0_err` by default (`color_col=`, `abs_g_col=`, `color_err_col=`,
@@ -114,14 +142,28 @@ print(table[["name", "cmd_age_myr", "cmd_age_lower_myr", "cmd_age_upper_myr", "c
 # 2  star C        675.0              675.0                NaN           old
 ```
 
-The columns added are `cmd_age_myr` (most probable age, or the edge reference age at a limit),
-`cmd_age_lower_myr` and `cmd_age_upper_myr` (16th and 84th percentiles), `cmd_age_median_myr`,
-`cmd_age_p2p5_myr` and `cmd_age_p97p5_myr`, `cmd_age_limit`, `cmd_age_n_references`,
-`cmd_age_scatter_mag`, `cmd_age_mh`, `cmd_age_metallicity_clipped`, `cmd_age_fitted`,
-`cmd_age_color_out_of_range` and `cmd_age_blue_caution`. The second return value `result` is the
-`infer_ages` output for the fitted rows (`result["posterior"]`, `result["age_grid_myr"]`, and
-`result["row"]` giving each fitted star's row in the table). Instead of a DataFrame you can pass a
-file path (`.csv`, `.feather`, `.parquet` or `.fits`):
+`table` is a copy of the input with these columns added:
+
+| column | meaning |
+|---|---|
+| `cmd_age_myr` | the adopted age (Myr): the most probable age, or at a limit the age of the edge reference sequence (4.6 Myr for `young`, 675 Myr for `old`) |
+| `cmd_age_lower_myr` | 16th percentile (Myr); for an `old` limit the oldest reference age, NaN for a `young` limit |
+| `cmd_age_upper_myr` | 84th percentile (Myr); for a `young` limit the youngest reference age, NaN for an `old` limit |
+| `cmd_age_median_myr` | median (Myr); NaN at a limit |
+| `cmd_age_p2p5_myr`, `cmd_age_p97p5_myr` | 2.5th and 97.5th percentiles (Myr); NaN at a limit |
+| `cmd_age_limit` | `""`, `"young"` or `"old"`, as `limit` above |
+| `cmd_age_n_references` | number of reference sequences covering the star's color |
+| `cmd_age_scatter_mag` | likelihood width (mag) for a star outside the library; NaN inside it |
+| `cmd_age_mh` | the [M/H] used (0 = solar) |
+| `cmd_age_metallicity_clipped` | `True` if [M/H] or the color was outside the tabulated offsets |
+| `cmd_age_fitted` | `True` if a posterior was computed for the row; `False` for rows left out by `fit_mask`, with non-finite photometry, out of the color range, or with fewer than two covering sequences |
+| `cmd_age_color_out_of_range` | `True` if the color is outside `min_color`–`max_color` |
+| `cmd_age_blue_caution` | `True` for (BP−RP)₀ < 0.8 |
+
+The second return value `result` is the `infer_ages` output for the fitted rows only (the arrays of the
+previous table, including `result["posterior"]` and `result["age_grid_myr"]`), plus `result["row"]`,
+the row index in `table` of each fitted star. Instead of a DataFrame you can pass a file path (`.csv`,
+`.feather`, `.parquet` or `.fits`):
 
 ```python
 import cmd_interp
@@ -168,9 +210,23 @@ print(table[["dr3_source_id", "BpmRp0", "BpmRp0_err", "phot_g_mean_mag_0", "phot
 # 1    64895139073954944  2.463277    0.011456           9.370757               0.010248        117.0
 ```
 
-`phot` is a copy of your table with `BpmRp0`, `phot_g_mean_mag_0` and their `_err` columns added,
-ready for `ages_for_table`. A per-star extinction can be given as a column name, and an extinction
-uncertainty is propagated if you have one:
+`phot` is a copy of your table with these columns added, ready for `ages_for_table`:
+
+| column | meaning |
+|---|---|
+| `distance` | 1000 / parallax (pc); NaN for a non-positive parallax |
+| `extinction_a0` | the A_0 used for the star (mag) |
+| `extinction_a0_err_cube` | the A_0 uncertainty you supplied (`a0_err`, 0 here), or the dust-map error in example 3 |
+| `extinction_a0_gradient` | dA_0/dd at the star (mag/pc); 0 when A_0 is supplied, non-zero with the dust maps |
+| `extinction_a0_err` | total A_0 uncertainty: `extinction_a0_err_cube` plus the distance error times the gradient, in quadrature |
+| `parallax_error_inflated` | the parallax error after the RUWE-dependent inflation (equal to `parallax_error` if `inflate_parallax_error=False`) |
+| `phot_g_mean_mag_0`, `phot_bp_mean_mag_0`, `phot_rp_mean_mag_0` | absolute, de-extincted G, BP and RP (mag) |
+| `BpmRp0` | the de-extincted color (G_BP − G_RP)₀ (mag) |
+| `phot_g_mean_mag_0_err`, `phot_bp_mean_mag_0_err`, `phot_rp_mean_mag_0_err` | magnitude uncertainties (mag): flux error, zero point, parallax and A_0 terms in quadrature |
+| `BpmRp0_err` | color uncertainty (mag): BP and RP flux errors, zero points and the A_0 term in quadrature |
+
+`table` then carries the `cmd_age_*` columns of example 1 as well. A per-star extinction can be given
+as a column name, and an extinction uncertainty is propagated if you have one:
 
 ```python
 import pandas as pd
@@ -203,6 +259,13 @@ print(table[["dr3_source_id", "extinction_a0", "phot_g_mean_mag_0_err", "cmd_age
 # 1    64895139073954944           0.17               0.023085        120.0
 ```
 
+| column | meaning |
+|---|---|
+| `extinction_a0` | the per-star A_0 read from the `a0` column (mag) |
+| `extinction_a0_err` | the per-star uncertainty read from the `a0_err` column (mag); it is also stored in `extinction_a0_err_cube` |
+| `phot_g_mean_mag_0_err` | the M_G,0 uncertainty, now larger because the A_0 uncertainty is included |
+| `cmd_age_myr` | the most probable age (Myr); the Pleiades star moves from 117.0 to 120.0 Myr with the higher A_0 |
+
 If you only have source IDs, `ages_from_gaia` fetches the `gaia_source` rows first (needs the `gaia`
 extra and a network connection; the archive is queried anonymously):
 
@@ -220,6 +283,18 @@ print(table[["dr3_source_id", "found_in_gaia", "BpmRp0", "phot_g_mean_mag_0", "c
 # 1  6794047652729201024           True  2.063842           7.819516         40.3
 ```
 
+`table` has one row per requested ID, in the order given, with:
+
+| column | meaning |
+|---|---|
+| `dr3_source_id` | the Gaia DR3 source ID you asked for |
+| `found_in_gaia` | `True` if the ID exists in DR3; a missing ID keeps its row with NaN everywhere else |
+| `ra`, `dec`, `pmra`, `pmdec`, `parallax`, `parallax_error`, `ruwe`, `phot_{g,bp,rp}_mean_mag`, `phot_{g,bp,rp}_mean_flux`, `phot_{g,bp,rp}_mean_flux_error`, `azero_gspphot` | the `gaia_source` columns fetched from the archive (`azero_gspphot` is Gaia's own GSP-Phot A_0, for comparison; it is not used) |
+| `distance`, `extinction_a0`, `extinction_a0_err`, …, `BpmRp0`, `BpmRp0_err` | the de-reddened photometry and uncertainties of `deredden_gaia`, as in the table above |
+| `cmd_age_myr`, `cmd_age_lower_myr`, …, `cmd_age_blue_caution` | the age columns of example 1 |
+
+`result` is the `infer_ages` output for the fitted rows with `result["row"]`, as in example 1.
+
 For a single star, `star_age_from_gaia` returns a dict like `star_age` with the Gaia and de-reddened
 photometry columns included:
 
@@ -234,6 +309,16 @@ star = cmd_interp.star_age_from_gaia(source_id, a0=a0)
 print(star["BpmRp0"], star["phot_g_mean_mag_0"], star["phot_g_mean_mag_0_err"])   # 2.463 9.371 0.010
 print(star["age_map_myr"])                                                        # 117.0
 ```
+
+`star` holds every key of the `star_age` dict (example 1) plus every column of the `ages_from_gaia`
+table above as a scalar:
+
+| key | meaning |
+|---|---|
+| `BpmRp0`, `phot_g_mean_mag_0`, `BpmRp0_err`, `phot_g_mean_mag_0_err` | the four fit inputs derived from the Gaia photometry; also available as `color`, `abs_g`, `color_err`, `abs_g_err` |
+| `age_map_myr`, `age_myr_16`, `age_myr_84`, `limit`, `posterior`, `age_grid_myr`, … | the age results of `star_age` |
+| `cmd_age_myr`, `cmd_age_lower_myr`, … | the same results in their table-column form |
+| `ra`, `dec`, `parallax`, `distance`, `extinction_a0`, … | the Gaia and de-reddened photometry columns |
 
 ### 3. You have only a Gaia DR3 source ID
 
@@ -266,6 +351,17 @@ print(star["extinction_a0"], star["extinction_a0_err"])   # 0.165 0.003    A_0 f
 print(star["age_map_myr"])                                # 119.0
 ```
 
+The dust-map keys in `star` (the rest is as in example 2):
+
+| key | meaning |
+|---|---|
+| `distance` | 1000 / parallax (pc), the distance the dust map is integrated to |
+| `extinction_a0` | A_0 (mag) integrated along the line of sight from the Sun to the star |
+| `extinction_a0_err_cube` | the dust-map uncertainty of A_0 (mag): the error cube integrated along the same line of sight |
+| `extinction_a0_gradient` | dA_0/dd at the star (mag/pc), the local dust density |
+| `extinction_a0_err` | total A_0 uncertainty (mag): `extinction_a0_err_cube` and the parallax error times `extinction_a0_gradient`, in quadrature; this is the value propagated into the photometry |
+| `age_map_myr` | the most probable age (Myr) with this A_0 and its uncertainty included |
+
 Or pass the cube paths explicitly:
 
 ```python
@@ -284,6 +380,12 @@ print(table[["dr3_source_id", "extinction_a0", "extinction_a0_err", "cmd_age_myr
 # 0    64895139073954944        0.16478           0.003259        119.0         130.060208        2976.067306
 # 1  6794047652729201024        0.00746           0.000100         40.3          29.316139          45.512950
 ```
+
+| column | meaning |
+|---|---|
+| `extinction_a0`, `extinction_a0_err` | A_0 (mag) from the dust map and its total uncertainty, as above |
+| `cmd_age_myr` | the most probable age (Myr) |
+| `cmd_age_lower_myr`, `cmd_age_upper_myr` | 16th and 84th percentiles (Myr); for the Pleiades star the posterior is broad and skewed to old ages, so its most probable age lies below the 16th percentile |
 
 The same works from the command line:
 
@@ -317,6 +419,12 @@ metal_rich = cmd_interp.star_age(color, abs_g, color_err, abs_g_err, mh=+0.1)   
 print(solar["age_map_myr"], metal_poor["age_map_myr"], metal_rich["age_map_myr"])   # 74.5 34.3 88.0
 ```
 
+| key | meaning |
+|---|---|
+| `age_map_myr` | the most probable age (Myr) with the sequences shifted to the given [M/H] |
+| `mh` | the [M/H] used: 0.0, −0.3 and 0.1 for the three fits |
+| `metallicity_clipped` | `True` if [M/H] was outside −0.5 to +0.3 or the color outside 0.8 to 2.9, so the edge offset was used; `False` for all three here |
+
 In a table, give one [M/H] per star in a column (`mh_col=`) or one value for every star (`mh=`).
 Missing or NaN values are treated as solar:
 
@@ -343,6 +451,13 @@ print(table[["name", "mh", "cmd_age_myr", "cmd_age_lower_myr", "cmd_age_upper_my
 # 2  star C  0.1        675.0              675.0                NaN           old
 ```
 
+| column | meaning |
+|---|---|
+| `mh` | your input column, left as it is (NaN for star A) |
+| `cmd_age_mh` | the [M/H] actually used: 0.0 for star A (NaN means solar), −0.1 and 0.1 for the others |
+| `cmd_age_metallicity_clipped` | `True` where the edge offset was used; `False` for all three |
+| `cmd_age_myr`, `cmd_age_lower_myr`, `cmd_age_upper_myr`, `cmd_age_limit` | as in example 1; star B is now 57.5 Myr instead of 74.5 Myr because a metal-poor star of its brightness is younger than a solar one |
+
 From source IDs, pass one value per star (needs the `gaia` extra and the dust maps, or `a0=` as in
 example 2):
 
@@ -362,6 +477,12 @@ print(table[["dr3_source_id", "cmd_age_mh", "cmd_age_myr", "cmd_age_lower_myr", 
 star = cmd_interp.star_age_from_gaia(64895139073954944, a0="dustmap", mh=-0.1)
 print(star["age_map_myr"])    # 93.0, against 119.0 at solar metallicity and 201.4 at [M/H] = +0.1
 ```
+
+| column / key | meaning |
+|---|---|
+| `cmd_age_mh` | the [M/H] used for each star, taken from `mh_values` in the order of `source_ids` |
+| `cmd_age_myr`, `cmd_age_lower_myr`, `cmd_age_upper_myr` | the most probable age and 68% interval (Myr) at that metallicity |
+| `age_map_myr` | the same most probable age for the single-star call |
 
 The offsets are tabulated for [M/H] from −0.5 to +0.3 and (BP−RP)₀ from 0.8 to 2.9; outside that
 range the edge value is used and the star is flagged `metallicity_clipped`. At (BP−RP)₀ ≈ 2 a 0.1 dex
@@ -393,6 +514,12 @@ density = cmd_interp.posterior_density(weights, age_grid)        # (1, 1343) pro
 
 print(np.sum(weights), np.trapz(density[0], age_grid))           # 0.99999994 1.0  (float32 weights)
 ```
+
+| variable | meaning |
+|---|---|
+| `age_grid` | the age grid (Myr), shape `(1343,)` |
+| `weights` | the posterior as node weights that sum to 1, shape `(1343,)`; a weight is the probability of the grid node, not a density, so wider 5 Myr nodes carry more weight than 1 Myr nodes at the same density |
+| `density` | probability per Myr on the same grid, shape `(1, 1343)` (one row per posterior; `posterior_density` accepts a 2-D array of many posteriors); its integral over the grid is 1 |
 
 ## Command line
 
@@ -456,6 +583,13 @@ print(default["age_map_myr"], younger_bpic["age_map_myr"], older_pair["age_map_m
 # 74.5 74.5 80.5 74.5
 ```
 
+| variable | meaning |
+|---|---|
+| `default["age_map_myr"]` | the most probable age (Myr) with the default reference ages |
+| `younger_bpic["age_map_myr"]` | the same with β Pic at 21 Myr: unchanged, because this star is bracketed by IC 2602 and α Per |
+| `older_pair["age_map_myr"]` | with α Per at 85 Myr and the Pleiades at 112 Myr: the age moves with the bracketing sequence |
+| `no_coma["age_map_myr"]` | with Coma Ber left out (`n_references` drops to 5): unchanged for this star |
+
 Other options accepted by every entry point:
 
 | argument | default | meaning |
@@ -476,6 +610,11 @@ star = cmd_interp.star_age(
 )
 print(star["age_map_myr"], star["age_myr_16"], star["age_myr_84"])   # 74.5 60.0 86.0
 ```
+
+| key | meaning |
+|---|---|
+| `age_map_myr` | the most probable age (Myr): unchanged, since the extra scatter widens the likelihood without moving its peak |
+| `age_myr_16`, `age_myr_84` | the 68% credible interval (Myr): wider than the default 62.7–83.9 Myr |
 
 How the likelihood, the sequence widths, the prior and the flat extension outside the library are
 defined, and how the ages compare with independent cluster ages, is in the paper.
