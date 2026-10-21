@@ -10,9 +10,6 @@ stars that lie beyond the youngest or oldest reference sequence. The method, its
 limitations are described in the accompanying paper (Boyle et al. in prep., "The Fraction of Bound Stars as a Function of Age within 500 pc"); this page covers
 how to run the code.
 
-<a href="https://gitviewsmap.onrender.com/awboyle">
-  <img src="https://gitviewsmap.onrender.com/badge/awboyle" alt="GitViewsMap Visitor Badge" />
-</a>
 
 ```python
 import cmd_interp
