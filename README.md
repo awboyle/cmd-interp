@@ -7,7 +7,7 @@ The method is designed for pre-main-sequence stars, roughly 5–700 Myr old. K a
 contracting toward the main sequence at these ages, so their CMD position is age-sensitive. For every
 star the package returns a full age posterior, point estimates, credible intervals, and a flag for
 stars that lie beyond the youngest or oldest reference sequence. The method, its calibration and its
-limitations are described in the accompanying paper (Boyle et al., in preparation); this page covers
+limitations are described in the accompanying paper (Boyle et al 2026, "The Fraction of Bound Stars as a Function of Age within 500 pc"); this page covers
 how to run the code.
 
 ```python
